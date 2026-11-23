@@ -30,6 +30,9 @@ final class Front extends FrameLayout implements Scroller.Watcher {
 
         /** Shown faded: read on this TV, with "Stories you've read" set to dim. */
         boolean isDimmed(String storyId);
+
+        /** A card got focus (to fetch its story ahead if it stays there). */
+        void onFocusStory(Story story);
     }
 
     private static final int RAIL_DP = 224, GAP_DP = 20, SIDE_DP = 34;
@@ -286,6 +289,9 @@ final class Front extends FrameLayout implements Scroller.Watcher {
         final Card card = new Card(getContext(), style, images);
         card.bind(s, index, now);
         card.setDim(listener.isDimmed(s.id));
+        card.setOnFocusChangeListener((v, has) -> {
+            if (has) listener.onFocusStory(card.story);
+        });
         card.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {

@@ -35,6 +35,8 @@ final class Article {
     final boolean truncated;
     /** A relay job still fetching the body from Apple News, or null. */
     final String pendingJob;
+    /** queued or running, while {@link #pendingJob} is set. */
+    final String jobState;
     final boolean jobFailed;
     /** In Saved Stories on the Mac; liked ("like"), disliked ("dislike") or neither (null). */
     final boolean saved;
@@ -52,6 +54,7 @@ final class Article {
         JSONObject job = data.optJSONObject("fetch_job");
         String state = job == null ? null : job.optString("state");
         pendingJob = job != null && ("queued".equals(state) || "running".equals(state)) ? job.optString("id") : null;
+        jobState = pendingJob != null ? state : null;
         jobFailed = job != null && ("failed".equals(state)
                 || ("succeeded".equals(state) && body == null));
         saved = data.optBoolean("saved");

@@ -18,7 +18,11 @@ your network by itself.
   where light type would fade into it, sets each line on a dark block.
 - **Reader:** a single column of serif type (Newsreader, SIL OFL), pictures with captions, quotes
   and subheads. The headline, summary and picture show at once; the body follows, fetched from
-  Apple News on the Mac if it wasn't there yet. Reopening a story goes back to where you left it.
+  Apple News on the Mac if it wasn't there yet (usually in a quarter of a second). While it's on
+  its way, a band at the bottom says what the Mac is doing, with a running bar and the press room
+  at work ("Inking the plates…"), and grey lines wait where the text will be set. Resting on a
+  card for a moment, or reading a story, has the Mac fetch that story or the next one ahead.
+  Reopening a story goes back to where you left it.
 - **Video:** a story's video is selected when it scrolls into view; OK plays it full screen,
   streamed straight from the publisher (Left/Right 10 s, OK pause, Back to the story).
 - **Options (☰ Menu):** a panel slides in from the right, over the front page or a story, in the
@@ -30,7 +34,8 @@ your network by itself.
     takes it back.
   - **More from** the publisher, **More on** one of the story's topics, or **Related stories**,
     as a new section at the top of the rail. The Mac loads more of the channel in the background.
-  - **Text size** (four steps), **Appearance** (automatic, dark, light), **Stories you've read**
+  - **Text size** on a slider of ten steps, from 14 pt for close reading to 40 pt for across the
+    room (the column widens for the big sizes), **Appearance** (automatic, dark, light), **Stories you've read**
     (show, dim or hide them), **Continue reading** the last unfinished story, **Refresh now** and
     how often to refresh by itself.
   - The footer says whether the Mac is answering and how much it has to do.
@@ -101,8 +106,9 @@ java -cp build/test io.github.vladislavekimtcov.broadsheet.SunTest
 | | |
 |---|---|
 | front page | `GET /v1/sections?per_section=30`, `GET /v1/articles?limit=45` (Latest), `GET /v1/saved` |
-| a story | `GET /v1/articles/{id}?wait=14`: the relay answers as soon as News has the body |
-| still fetching | `GET /v1/jobs/{id}?wait=30`, then the article again |
+| a story | `GET /v1/articles/{id}`: the body, or the job fetching it (queued or running) |
+| still fetching | `GET /v1/jobs/{id}?wait=12` (up to four times), then the article again |
+| ahead of time | `POST /v1/articles/{id}/fetch?priority=background`: the card resting in focus, the next story |
 | save, unsave | `PUT` / `DELETE /v1/saved/{id}?wait=25` |
 | like, dislike, take back | `PUT /v1/articles/{id}/reaction?reaction=like` / `DELETE` the same |
 | more like this | `GET /v1/channels/{id}/articles`, `/v1/topics/{id}/articles`, `/v1/articles/{id}/related`; then `POST /v1/channels/{id}/refresh` |

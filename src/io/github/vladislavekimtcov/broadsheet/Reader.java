@@ -40,8 +40,9 @@ final class Reader extends FrameLayout {
         void onPlay(String stream, String title);
     }
 
-    static final float[] SIZES = {18.5f, 21f, 24f, 27.5f};
-    static final String[] SIZE_NAMES = {"Small", "Medium", "Large", "Extra large"};
+    /** Body text sizes (sp), from close reading to across the room; {@link #STANDARD} is the default. */
+    static final float[] SIZES = {14f, 15.5f, 17f, 18.5f, 21f, 24f, 27.5f, 31f, 35f, 40f};
+    static final int STANDARD = 4;
 
     private final Images images;
     private final Listener listener;
@@ -51,8 +52,10 @@ final class Reader extends FrameLayout {
     private final List<Picture> pictures = new ArrayList<>();
     private Story story;
     private Article article;
-    private int sizeStep = 1;
+    private int sizeStep = STANDARD;
     private TextView note;
+    private Loader loader;
+    private final Ticker ticker;
     /** The video in view that OK plays, or null. */
     private Picture selectedVideo;
 
@@ -74,6 +77,8 @@ final class Reader extends FrameLayout {
         progress.setPivotX(0);
         progress.setScaleX(0);
         addView(progress, new LayoutParams(-1, Ui.dp(3)));
+        ticker = new Ticker(c);
+        addView(ticker, new LayoutParams(-1, Ui.dp(58), Gravity.BOTTOM));
     }
 
     Story story() {
@@ -113,6 +118,18 @@ final class Reader extends FrameLayout {
 
     void setTextSizeStep(int step) {
         sizeStep = Math.max(0, Math.min(SIZES.length - 1, step));
+        // Big type for reading from the sofa gets a wider column, so lines keep a few words.
+        int width = Ui.dp(700 + Math.max(0f, size() - 24f) * 10f);
+        ViewGroup.LayoutParams lp = column.getLayoutParams();
+        if (lp != null && lp.width != width) {
+            lp.width = width;
+            column.setLayoutParams(lp);
+        }
+    }
+
+    /** What the Mac is doing about the story, while the body is on its way. */
+    void setStage(String stage) {
+        ticker.setStage(stage);
     }
 
     /** Sets the open story again (new text size), keeping the place in it. */
@@ -134,7 +151,11 @@ final class Reader extends FrameLayout {
         header(s, null, 0);
         if (s.excerpt != null) column.addView(standfirst(s.excerpt));
         if (s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
-        note = note("Getting the story from Apple News on the Mac…");
+        loader = new Loader(getContext());
+        LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-1, -2);
+        ll.topMargin = Ui.dp(34);
+        column.addView(loader, ll);
+        ticker.start("Asking the Mac for the story…");
         scroll.scrollTo(0, 0);
         afterLayout();
     }
@@ -142,11 +163,19 @@ final class Reader extends FrameLayout {
     /** The body arrived (or didn't: {@code error}). */
     void setArticle(Article a, String error) {
         if (a == null) {
+            ticker.stop();
+            if (loader != null) {
+                column.removeView(loader);
+                loader.finish();
+                loader = null;
+                note = note("");
+            }
             if (note != null) note.setText(error != null ? error + "\n\nThis is the summary only." : "This is the summary only.");
             return;
         }
         if (a.story != null && !a.story.id.equals(story.id)) return;
         article = a;
+        if (a.pendingJob == null) ticker.stop();
         int y = scroll.getScrollY();
         clear();
         Story s = a.story != null ? a.story : story;
@@ -158,7 +187,11 @@ final class Reader extends FrameLayout {
         if (!leadImage && s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
         for (Article.Block b : a.blocks) block(b);
         if (a.pendingJob != null) {
-            note = note("Getting the full story from Apple News on the Mac…");
+            loader = new Loader(getContext());
+            ticker.setStage("Apple News is fetching the whole story…");
+            LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-1, -2);
+            ll.topMargin = Ui.dp(34);
+            column.addView(loader, ll);
         } else if ("preview".equals(a.completeness)) {
             note = note("This is the opening of an Apple News+ story. The rest needs an Apple News+ subscription "
                     + "on the Mac.\n\nRight: next story");
@@ -175,6 +208,8 @@ final class Reader extends FrameLayout {
 
     private void clear() {
         selectedVideo = null;
+        if (loader != null) loader.finish();
+        loader = null;
         for (Picture p : pictures) images.cancel(p);
         pictures.clear();
         column.removeAllViews();
@@ -444,6 +479,117 @@ final class Reader extends FrameLayout {
             if (selectedVideo != null) selectedVideo.invalidate();
             selectedVideo = best;
             if (best != null) best.invalidate();
+        }
+    }
+
+    /** Grey lines where the paragraphs will be set, a sheen sweeping across them, while the body
+     *  is on its way. Animates only while attached and waiting. */
+    private final class Loader extends View {
+        private final long started = android.os.SystemClock.uptimeMillis();
+        private boolean finished;
+        private final Paint sheen = new Paint();
+        private final float[] widths = {1f, 0.97f, 0.99f, 0.94f, 1f, 0.62f};
+
+        Loader(Context c) {
+            super(c);
+        }
+
+        void finish() {
+            finished = true;
+        }
+
+        @Override
+        protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(MeasureSpec.getSize(wSpec), Math.round(size() * Ui.px(1) * 1.45f * widths.length));
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float t = (android.os.SystemClock.uptimeMillis() - started) / 1000f;
+            if (t > 60) finished = true;
+            int w = getWidth();
+            float lh = size() * Ui.px(1) * 1.45f, bar = size() * Ui.px(1) * 0.5f;
+            float sx = ((t % 1.8f) / 1.8f) * (w + Ui.px(400)) - Ui.px(200);
+            sheen.setShader(new android.graphics.LinearGradient(sx - Ui.px(160), 0, sx + Ui.px(160), 0,
+                    new int[] {Ui.SURFACE, Ui.SURFACE_HI, Ui.SURFACE}, null, android.graphics.Shader.TileMode.CLAMP));
+            for (int i = 0; i < widths.length; i++) c.drawRect(0, i * lh, w * widths[i], i * lh + bar, sheen);
+            if (!finished && isAttachedToWindow()) postInvalidateOnAnimation();
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            finished = true;
+        }
+    }
+
+    /**
+     * Pinned to the bottom of the screen while a story is on its way, so it shows whatever is in
+     * view: what the Mac is doing and for how long, a bar that runs quickly to a third and then
+     * ever slower (it never claims to be done), and the press room at work underneath.
+     */
+    private final class Ticker extends View {
+        private long started;
+        private String stage = "";
+        private boolean running;
+        private final android.text.TextPaint stagePaint = Ui.paint(16, Ui.INK, Ui.sansMedium);
+        private final android.text.TextPaint timePaint = Ui.paint(15, Ui.MUTED, Ui.sansMedium);
+        private final android.text.TextPaint pressPaint = Ui.paint(15, Ui.MUTED, Ui.textItalic);
+        private final Paint fill = new Paint();
+        private final String[] press = {"Setting the type", "Inking the plates", "Running the press", "Folding the pages"};
+
+        Ticker(Context c) {
+            super(c);
+            setVisibility(GONE);
+        }
+
+        void start(String s) {
+            started = android.os.SystemClock.uptimeMillis();
+            stage = s;
+            running = true;
+            setAlpha(1f);
+            setVisibility(VISIBLE);
+            invalidate();
+        }
+
+        void setStage(String s) {
+            stage = s;
+            invalidate();
+        }
+
+        void stop() {
+            if (!running) return;
+            running = false;
+            animate().alpha(0f).setDuration(220).withEndAction(() -> {
+                if (!running) setVisibility(GONE);
+            }).start();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float t = (android.os.SystemClock.uptimeMillis() - started) / 1000f;
+            if (t > 60 && running) {
+                running = false;  // stop moving; the page must go quiet
+                stage = "Apple News hasn't sent the story yet. Right: next story";
+            }
+            int w = getWidth(), h = getHeight();
+            fill.setColor(Ui.SURFACE);
+            c.drawRect(0, 0, w, h, fill);
+            fill.setColor(Ui.RULE);
+            c.drawRect(0, 0, w, Ui.px(3), fill);
+            float p = 0.94f * (1f - (float) Math.exp(-t / 2.2f));
+            fill.setColor(Ui.ACCENT);
+            c.drawRect(0, 0, w * p, Ui.px(3), fill);
+            float pip = (t * 0.9f) % 1f;  // a bright run along the filled part keeps it visibly alive
+            fill.setColor(Ui.alpha(Ui.INK, 0.6f));
+            c.drawRect(w * p * pip, 0, Math.min(w * p, w * p * pip + Ui.px(36)), Ui.px(3), fill);
+            float pad = Ui.px(40), base = h / 2f + stagePaint.getTextSize() * 0.38f + Ui.px(1.5f);
+            c.drawText(stage, pad, base, stagePaint);
+            float x = pad + stagePaint.measureText(stage) + Ui.px(14);
+            if (t >= 1.5f) c.drawText(Math.round(t) + " s", x, base, timePaint);
+            String line = press[(int) (t / 1.6f) % press.length] + "…";
+            c.drawText(line, w - pad - pressPaint.measureText(line), base, pressPaint);
+            if (running && isAttachedToWindow()) postInvalidateOnAnimation();
         }
     }
 

@@ -111,7 +111,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         root.setBackgroundColor(Ui.PAPER);
         front = new Front(this, images, this);
         reader = new Reader(this, images, this);
-        reader.setTextSizeStep(prefs.getInt("size", 1));
+        reader.setTextSizeStep(textStep());
         reader.setVisibility(View.GONE);
         player = new Player(this, this);
         options = new Options(this, this);
@@ -119,6 +119,13 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         root.addView(reader);
         root.addView(player);
         root.addView(options);
+    }
+
+    /** The text size step; 0.1's four sizes (key "size") map onto the ten of 0.2.1. */
+    private int textStep() {
+        if (prefs.contains("text")) return prefs.getInt("text", Reader.STANDARD);
+        int old = prefs.getInt("size", 1);
+        return Math.max(0, Math.min(Reader.SIZES.length - 1, Reader.STANDARD - 1 + old));
     }
 
     @Override
@@ -291,23 +298,65 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         pendingRestore = at > 0.04f && at < 0.95f ? at : 0f;
         library.setPosition(s, at);
         library.save();
-        relay.article(s.id, FETCH_WAIT, (a, error) -> {
+        // Ask without waiting, to say at once what the Mac is doing; then wait on its job.
+        relay.article(s.id, 0, (a, error) -> {
             if (reader.story() != s) return;
-            arrived(s, a, error);
-            if (a != null && a.pendingJob != null) {
-                relay.job(a.pendingJob, 30, (state, e) -> {
-                    if (reader.story() != s) return;
-                    relay.article(s.id, 0, (again, e2) -> {
-                        if (reader.story() == s) arrived(s, again, e2);
-                    });
-                });
+            if (a == null || a.pendingJob == null) {
+                arrived(s, a, error);
+                return;
             }
+            reader.setStage("queued".equals(a.jobState) ? "Waiting its turn on the Mac…" : "Apple News is fetching it on the Mac…");
+            follow(s, a.pendingJob, 0);
         });
+    }
+
+    /** Waits for the relay's job on a story, then shows what came of it. */
+    private void follow(final Story s, final String job, final int round) {
+        relay.job(job, 12, (state, e) -> {
+            if (reader.story() != s) return;
+            if ("running".equals(state) || "queued".equals(state)) {
+                if (round < 3) {
+                    reader.setStage("Still fetching: big stories and Apple News+ take longer…");
+                    follow(s, job, round + 1);
+                    return;
+                }
+            }
+            relay.article(s.id, 0, (again, e2) -> {
+                if (reader.story() != s) return;
+                arrived(s, again, e2);
+            });
+        });
+    }
+
+    // ------------------------------------------------------------ ahead of time
+
+    private final Set<String> prefetched = new HashSet<>();
+    private Story focusedStory;
+    private final Runnable prefetchFocused = () -> {
+        if (focusedStory != null && reader.getVisibility() != View.VISIBLE) prefetch(focusedStory);
+    };
+
+    @Override
+    public void onFocusStory(Story story) {
+        focusedStory = story;
+        root.removeCallbacks(prefetchFocused);
+        root.postDelayed(prefetchFocused, 700);  // resting on it, not skimming past
+    }
+
+    /** The story after the open one, so Right opens at once. */
+    private void prefetchNext() {
+        if (openSection != null && openIndex + 1 < openSection.stories.size()) prefetch(openSection.stories.get(openIndex + 1));
+    }
+
+    private void prefetch(Story s) {
+        if (!"summary".equals(s.completeness) || !prefetched.add(s.id)) return;
+        relay.prefetch(s.id);
     }
 
     private void arrived(Story s, Article a, String error) {
         reader.setArticle(a, error);
         if (a == null) return;
+        if (a.pendingJob == null) prefetchNext();
         library.setReaction(s.id, a.reaction);
         if (pendingRestore > 0 && a.pendingJob == null) {
             reader.restoreFraction(pendingRestore);
@@ -496,10 +545,11 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         };
         moreTile.onOk = this::openMore;
         sizeTile = new Options.Tile("Aa", "Text size");
+        sizeTile.slider = Reader.SIZES.length;
         sizeTile.onStep = d -> {
             int step = Math.max(0, Math.min(Reader.SIZES.length - 1, reader.sizeStep() + d));
             if (step == reader.sizeStep()) return;
-            prefs.edit().putInt("size", step).apply();
+            prefs.edit().putInt("text", step).apply();
             reader.setTextSizeStep(step);
             if (reader.getVisibility() == View.VISIBLE) reader.relayout();
             fillOptions();
@@ -620,8 +670,12 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         moreTile.hint = !has ? pick : moreBusy ? "Loading…" : moreError != null ? moreError
                 : moreChoices.size() > 1 ? "◀ ▶ more choices  ·  OK shows them" : "OK shows them";
 
-        sizeTile.value = Reader.SIZE_NAMES[reader.sizeStep()];
-        sizeTile.hint = "◀ ▶ smaller or larger";
+        int step = reader.sizeStep();
+        sizeTile.position = step;
+        float pt = Reader.SIZES[step];
+        sizeTile.value = (step == 0 ? "Close reading  ·  " : step == Reader.SIZES.length - 1 ? "Across the room  ·  "
+                : step == Reader.STANDARD ? "Standard  ·  " : "") + (pt == Math.round(pt) ? String.valueOf(Math.round(pt)) : String.valueOf(pt)) + " pt";
+        sizeTile.hint = null;
 
         themeTile.value = THEME_NAMES[indexOf(THEMES, themeMode())];
         themeTile.hint = "auto".equals(themeMode()) ? sunHint() : "◀ Automatic follows sunset";

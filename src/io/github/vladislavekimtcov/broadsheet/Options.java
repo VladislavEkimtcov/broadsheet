@@ -35,6 +35,8 @@ final class Options extends FrameLayout {
         /** An {@link Icons} drawing instead of the {@code icon} glyph, and one per segment. */
         int vectorIcon;
         int[] segmentIcons;
+        /** A slider of this many steps under the label (Left/Right moves it), at {@code position}. */
+        int slider, position;
         boolean enabled = true;
         /** Two or more choices drawn as pills under the label (Like / Dislike). */
         String[] segments;
@@ -242,6 +244,8 @@ final class Options extends FrameLayout {
         private final TextPaint value = Ui.paint(16, Ui.INK, Ui.sansMedium);
         private final TextPaint hint = Ui.paint(13, Ui.MUTED, Ui.sans);
         private final TextPaint pill = Ui.paint(14, Ui.INK, Ui.sansMedium);
+        private final TextPaint small = Ui.paint(13, Ui.INK, Ui.text);
+        private final TextPaint big = Ui.paint(25, Ui.INK, Ui.text);
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private boolean on;
 
@@ -260,7 +264,7 @@ final class Options extends FrameLayout {
         protected void onMeasure(int wSpec, int hSpec) {
             boolean second = tile.segments != null || (tile.hint != null && !tile.hint.isEmpty());
             boolean hinted = tile.hint != null && !tile.hint.isEmpty();
-            int h = tile.segments != null ? Ui.dp(hinted ? 112 : 92) : Ui.dp(second ? 68 : 50);
+            int h = tile.slider > 0 ? Ui.dp(84) : tile.segments != null ? Ui.dp(hinted ? 112 : 92) : Ui.dp(second ? 68 : 50);
             setMeasuredDimension(MeasureSpec.getSize(wSpec), h);
         }
 
@@ -299,7 +303,28 @@ final class Options extends FrameLayout {
             String l = TextUtils.ellipsize(tile.label, label, right - vw - Ui.px(12) - x, TextUtils.TruncateAt.END).toString();
             c.drawText(l, x, top, label);
             hint.setColor(Ui.alpha(Ui.MUTED, a));
-            if (tile.segments != null) {
+            if (tile.slider > 0) {
+                // A small A, the track with a tick per step and a square knob, a big A.
+                float cy = top + Ui.px(26);
+                small.setColor(Ui.alpha(fg, a));
+                big.setColor(Ui.alpha(fg, a));
+                c.drawText("A", x, cy + small.getTextSize() * 0.36f, small);
+                float bx = right - big.measureText("A");
+                c.drawText("A", bx, cy + big.getTextSize() * 0.36f, big);
+                float tl = x + small.measureText("A") + Ui.px(14), tr = bx - Ui.px(14);
+                fill.setColor(Ui.alpha(Ui.INK, 0.18f));
+                c.drawRect(tl, cy - Ui.px(1.5f), tr, cy + Ui.px(1.5f), fill);
+                float step = (tr - tl) / Math.max(1, tile.slider - 1);
+                float kx = tl + step * tile.position;
+                fill.setColor(on ? Ui.ACCENT : Ui.alpha(fg, 0.7f * a));
+                c.drawRect(tl, cy - Ui.px(1.5f), kx, cy + Ui.px(1.5f), fill);
+                for (int i = 0; i < tile.slider; i++) {
+                    fill.setColor(Ui.alpha(Ui.INK, i <= tile.position ? 0.5f : 0.25f));
+                    c.drawRect(tl + step * i - Ui.px(1), cy - Ui.px(6), tl + step * i + Ui.px(1), cy + Ui.px(6), fill);
+                }
+                fill.setColor(on ? Ui.ACCENT : Ui.alpha(fg, a));
+                c.drawRect(kx - Ui.px(7), cy - Ui.px(9), kx + Ui.px(7), cy + Ui.px(9), fill);
+            } else if (tile.segments != null) {
                 float y0 = top + Ui.px(14), gap = Ui.px(6), sh = Ui.px(36);
                 float sw = (right - x - gap * (tile.segments.length - 1)) / tile.segments.length;
                 for (int i = 0; i < tile.segments.length; i++) {

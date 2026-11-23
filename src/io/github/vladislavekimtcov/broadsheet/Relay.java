@@ -433,6 +433,17 @@ final class Relay {
         });
     }
 
+    /** Asks the Mac to get a story's body ahead of time, behind anything someone is waiting on. */
+    void prefetch(final String id) {
+        io.execute(() -> {
+            try {
+                call("POST", "/v1/articles/" + id + "/fetch?priority=background", 8000);
+            } catch (IOException e) {
+                // only a guess; never mind
+            }
+        });
+    }
+
     /** A list of stories: a channel's or topic's ({@code /v1/channels/{id}/articles}), or the ones
      *  related to a story ({@code /v1/articles/{id}/related}). */
     void stories(final String path, final Done<List<Story>> done) {

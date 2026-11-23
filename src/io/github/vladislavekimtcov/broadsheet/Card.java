@@ -21,7 +21,9 @@ import android.view.View;
  * of thirty cards stays cheap to lay out and to redraw when focus moves.
  *
  * <ul>
- * <li>{@link #HERO}: the picture fills the card, headline and summary sit on a dark scrim.</li>
+ * <li>{@link #HERO}: the picture fills the card, headline and summary sit on a dark scrim. Where
+ * the picture is light under the words even so (snow, sky, a white page), each line gets a dark
+ * block behind it: see {@link #checkContrast}.</li>
  * <li>{@link #TILE}: 16:9 picture on top, dateline and a three-line headline below.</li>
  * <li>{@link #BRIEF}: no picture: dateline, a four-line headline and the start of the summary.</li>
  * </ul>
@@ -35,7 +37,9 @@ final class Card extends View implements Images.Target {
     private final Images images;
     private Bitmap bitmap;
     private float fade = 1f;
-    private boolean near;
+    private boolean near, dim;
+    /** HERO: the picture under the words is too light for light type; the words get dark blocks. */
+    private boolean blocks;
     private long now;
 
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -57,12 +61,13 @@ final class Card extends View implements Images.Target {
         setFocusable(true);
         setId(View.generateViewId());
         metaPaint = Ui.paint(style == HERO ? 13 : 11.5f, Ui.MUTED, Ui.sansMedium);
-        titlePaint = Ui.paint(style == HERO ? 27 : (style == BRIEF ? 17 : 16), Ui.INK, Ui.head);
-        excerptPaint = Ui.paint(style == HERO ? 15 : 13, Ui.MUTED, Ui.text);
+        // The hero's words sit on a dark scrim over its picture, light or dark page alike.
+        titlePaint = Ui.paint(style == HERO ? 27 : (style == BRIEF ? 17 : 16), style == HERO ? 0xFFF4EFE6 : Ui.INK, Ui.head);
+        excerptPaint = Ui.paint(style == HERO ? 15 : 13, style == HERO ? 0xFFC9C2B6 : Ui.MUTED, Ui.text);
         badgePaint = Ui.paint(10, Ui.INK, Ui.sansBold);
         border.setStyle(Paint.Style.STROKE);
         border.setStrokeWidth(Ui.px(3));
-        border.setColor(0xF2FFFFFF);
+        border.setColor(Ui.FOCUS);
     }
 
     void bind(Story s, int index, long now) {
@@ -107,6 +112,7 @@ final class Card extends View implements Images.Target {
     @Override
     public void onImage(Bitmap b, boolean fresh) {
         bitmap = b;
+        checkContrast();
         if (fresh) {
             ValueAnimator a = ValueAnimator.ofFloat(0f, 1f).setDuration(220);
             a.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
@@ -155,7 +161,73 @@ final class Card extends View implements Images.Target {
             }
         }
         // Over a picture the publisher's colour can vanish (red on red): keep the hero's light.
-        metaPaint.setColor(style == HERO ? 0xE6FFFFFF : story.accent);
+        metaPaint.setColor(style == HERO ? 0xE6FFFFFF : story.accent());
+        checkContrast();
+    }
+
+    /** Top of the hero's words (dateline, headline, summary), which sit at the bottom of the card. */
+    private float heroTextTop(int h) {
+        float y = h - Ui.dp(22);
+        if (excerpt != null) y -= excerpt.getHeight() + Ui.dp(10);
+        y -= title.getHeight() + Ui.dp(10) + metaPaint.getTextSize();
+        return y;
+    }
+
+    /**
+     * Looks at the part of the picture the hero's words cover, as it shows after the scrim, and
+     * decides whether light type stays readable there. Samples a grid over the words' lines and
+     * counts the points where the contrast with the headline's colour falls below 4.5:1 (WCAG's
+     * line for text); more than one in twelve and the words get blocks.
+     */
+    private void checkContrast() {
+        boolean was = blocks;
+        blocks = false;
+        int w = getWidth(), h = getHeight();
+        if (style != HERO || bitmap == null || title == null || w <= 0 || h <= 0) {
+            if (was) invalidate();
+            return;
+        }
+        int bw = bitmap.getWidth(), bh = bitmap.getHeight();
+        float scale = Math.max(w / (float) bw, h / (float) bh);
+        int cw = Math.round(w / scale), ch = Math.round(h / scale);
+        int x0 = (bw - cw) / 2, y0 = Math.max(0, (bh - ch) / 3);
+        int pad = Ui.dp(22);
+        float top = heroTextTop(h), bottom = h - pad;
+        float right = pad + Math.max(widest(title), excerpt != null ? widest(excerpt) : 0);
+        int bad = 0, all = 0;
+        for (int iy = 0; iy < 12; iy++) {
+            float vy = top + (bottom - top) * (iy + 0.5f) / 12f;
+            float shade = 0.94f * Math.max(0f, Math.min(1f, (vy - h * 0.25f) / (h * 0.75f)));  // the scrim
+            for (int ix = 0; ix < 24; ix++) {
+                float vx = pad + (right - pad) * (ix + 0.5f) / 24f;
+                int px = Math.min(bw - 1, Math.max(0, Math.round(x0 + vx / scale)));
+                int py = Math.min(bh - 1, Math.max(0, Math.round(y0 + vy / scale)));
+                int c = bitmap.getPixel(px, py);
+                float lum = luminance(((c >> 16) & 0xFF) * (1 - shade), ((c >> 8) & 0xFF) * (1 - shade), (c & 0xFF) * (1 - shade));
+                if ((TEXT_LUMINANCE + 0.05f) / (lum + 0.05f) < 4.5f) bad++;
+                all++;
+            }
+        }
+        blocks = bad * 12 > all;
+        if (blocks != was) invalidate();
+    }
+
+    /** Relative luminance (WCAG) of the headline's colour, 0xF4EFE6. */
+    private static final float TEXT_LUMINANCE = luminance(0xF4, 0xEF, 0xE6);
+
+    private static float luminance(float r, float g, float b) {
+        return 0.2126f * linear(r) + 0.7152f * linear(g) + 0.0722f * linear(b);
+    }
+
+    private static float linear(float v) {
+        v /= 255f;
+        return v <= 0.04045f ? v / 12.92f : (float) Math.pow((v + 0.055f) / 1.055f, 2.4f);
+    }
+
+    private static float widest(StaticLayout l) {
+        float w = 0;
+        for (int i = 0; i < l.getLineCount(); i++) w = Math.max(w, l.getLineRight(i));
+        return w;
     }
 
     private float briefExcerptTop(int pad) {
@@ -176,7 +248,8 @@ final class Card extends View implements Images.Target {
     protected void onFocusChanged(boolean focused, int direction, Rect previous) {
         super.onFocusChanged(focused, direction, previous);
         float s = focused ? 1.035f : 1f;
-        animate().scaleX(s).scaleY(s).translationZ(focused ? Ui.px(8) : 0).setDuration(140).start();
+        animate().scaleX(s).scaleY(s).translationZ(focused ? Ui.px(8) : 0).alpha(dim && !focused ? 0.42f : 1f)
+                .setDuration(140).start();
         invalidate();
     }
 
@@ -195,12 +268,19 @@ final class Card extends View implements Images.Target {
             float y = h - pad;
             if (excerpt != null) {
                 y -= excerpt.getHeight();
+                if (blocks) drawBlocks(c, excerpt, pad, y);
                 drawLayout(c, excerpt, pad, y);
                 y -= Ui.dp(10);
             }
             y -= title.getHeight();
+            if (blocks) drawBlocks(c, title, pad, y);
             drawLayout(c, title, pad, y);
             y -= Ui.dp(10) + metaPaint.getTextSize();
+            if (blocks && meta != null) {
+                fill.setColor(BLOCK);
+                c.drawRect(pad - Ui.px(8), y - Ui.px(3), pad + Math.min(metaPaint.measureText(meta), w - pad * 2) + Ui.px(8),
+                        y + metaPaint.getTextSize() * 1.15f + Ui.px(2), fill);
+            }
             drawMeta(c, pad, y + metaPaint.getTextSize() * 0.85f, w - pad * 2);
             if (story.paid) drawBadge(c, pad, pad);
         } else if (style == TILE) {
@@ -212,7 +292,7 @@ final class Card extends View implements Images.Target {
             drawLayout(c, title, pad, y + Ui.dp(9));
             if (story.paid) drawBadge(c, Ui.dp(8), Ui.dp(8));
         } else {
-            fill.setColor(Ui.mix(Ui.SURFACE, story.background, 0.12f));
+            fill.setColor(Ui.mix(Ui.SURFACE, tint(), 0.12f));
             c.drawRect(0, 0, w, h, fill);
             int pad = Ui.dp(12);
             float metaWidth = w - pad * 2 - (story.paid ? badgeWidth() + Ui.dp(8) : 0);
@@ -226,8 +306,18 @@ final class Card extends View implements Images.Target {
                 bounds.bottom - 1.5f, radius, radius, border);
     }
 
+    private int tint() {
+        return story.background != 0 ? story.background : Ui.SURFACE_HI;
+    }
+
+    /** A story already read on this TV, shown faded (full strength while focused). */
+    void setDim(boolean value) {
+        dim = value;
+        setAlpha(dim && !isFocused() ? 0.42f : 1f);
+    }
+
     private void drawPicture(Canvas c, int l, int t, int r, int b) {
-        fill.setColor(Ui.mix(Ui.SURFACE, story.background, 0.35f));
+        fill.setColor(Ui.mix(Ui.SURFACE, tint(), 0.35f));
         c.drawRect(l, t, r, b, fill);
         if (bitmap == null) return;
         int bw = bitmap.getWidth(), bh = bitmap.getHeight();
@@ -252,6 +342,17 @@ final class Card extends View implements Images.Target {
                     width - metaPaint.measureText(tail), TextUtils.TruncateAt.END) + tail;
         }
         c.drawText(m, x, baseline, metaPaint);
+    }
+
+    private static final int BLOCK = 0xD6000000;
+
+    /** A dark block behind each line, like a caption over video. */
+    private void drawBlocks(Canvas c, StaticLayout l, float x, float y) {
+        fill.setColor(BLOCK);
+        for (int i = 0; i < l.getLineCount(); i++) {
+            c.drawRect(x + l.getLineLeft(i) - Ui.px(8), y + l.getLineTop(i) - Ui.px(2),
+                    x + l.getLineRight(i) + Ui.px(8), y + l.getLineBottom(i) + Ui.px(3), fill);
+        }
     }
 
     private static void drawLayout(Canvas c, StaticLayout l, float x, float y) {

@@ -420,17 +420,93 @@ final class Relay {
         });
     }
 
-    /** Asks the Mac to refresh Today in Apple News (a minute of work there); returns the job id. */
-    void refreshToday(final Done<String> done) {
-        io.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    JSONObject o = call("POST", "/v1/today/refresh?pages=6", 20000);
-                    post(done, o.getJSONObject("data").optString("id"), null);
-                } catch (IOException | JSONException e) {
-                    post(done, null, e.getMessage());
+    /** Asks the Mac to refresh Today in Apple News, scrolling {@code pages} screens of the feed
+     *  there (a minute of work); returns the job id. */
+    void refreshToday(final int pages, final Done<String> done) {
+        io.execute(() -> {
+            try {
+                JSONObject o = call("POST", "/v1/today/refresh?pages=" + pages, 20000);
+                post(done, o.getJSONObject("data").optString("id"), null);
+            } catch (IOException | JSONException e) {
+                post(done, null, e.getMessage());
+            }
+        });
+    }
+
+    /** A list of stories: a channel's or topic's ({@code /v1/channels/{id}/articles}), or the ones
+     *  related to a story ({@code /v1/articles/{id}/related}). */
+    void stories(final String path, final Done<List<Story>> done) {
+        io.execute(() -> {
+            try {
+                JSONObject o = call("GET", path, 20000);
+                post(done, Story.list(o.optJSONArray("data")), null);
+            } catch (IOException e) {
+                post(done, null, e.getMessage());
+            }
+        });
+    }
+
+    /** Opens a channel or topic ({@code kind}: channels or topics) in News on the Mac so it loads
+     *  more of its stories; job id back. */
+    void refreshTag(final String kind, final String id, final Done<String> done) {
+        io.execute(() -> {
+            try {
+                JSONObject o = call("POST", "/v1/" + kind + "/" + id + "/refresh", 20000);
+                post(done, o.getJSONObject("data").optString("id"), null);
+            } catch (IOException | JSONException e) {
+                post(done, null, e.getMessage());
+            }
+        });
+    }
+
+    /** Saves a story in Apple News on the Mac, or takes it out of Saved Stories. Answers with the
+     *  story's state there afterwards: {@code {saved, reaction}}. */
+    void setSaved(final String id, final boolean saved, final Done<JSONObject> done) {
+        storyAction(saved ? "PUT" : "DELETE", "/v1/saved/" + id, done);
+    }
+
+    /** Suggest More ("like") or Fewer ("dislike") Stories Like This in Apple News; null takes it back. */
+    void setReaction(final String id, final String reaction, final Done<JSONObject> done) {
+        storyAction(reaction == null ? "DELETE" : "PUT", "/v1/articles/" + id + "/reaction"
+                + (reaction == null ? "" : "?reaction=" + reaction), done);
+    }
+
+    private void storyAction(final String method, final String path, final Done<JSONObject> done) {
+        io.execute(() -> {
+            try {
+                String sep = path.contains("?") ? "&" : "?";
+                JSONObject job = call(method, path + sep + "wait=25", 40000).getJSONObject("data");
+                for (int i = 0; i < 2 && ("queued".equals(job.optString("state")) || "running".equals(job.optString("state"))); i++) {
+                    job = call("GET", "/v1/jobs/" + job.optString("id") + "?wait=25", 40000).getJSONObject("data");
                 }
+                if ("succeeded".equals(job.optString("state"))) post(done, job.optJSONObject("result"), null);
+                else post(done, null, "Apple News on the Mac: " + job.optString("error", "it didn't happen"));
+            } catch (IOException | JSONException e) {
+                post(done, null, e.getMessage());
+            }
+        });
+    }
+
+    /** What the Mac is reading in Apple News right now (or was, in the last half hour), like
+     *  Handoff: {@code {article, on_screen, since, seen_at}}, or null when nothing is on offer. */
+    void handoff(final Done<JSONObject> done) {
+        io.execute(() -> {
+            try {
+                JSONObject o = call("GET", "/v1/handoff", 5000);
+                post(done, o.optJSONObject("data"), null);
+            } catch (IOException e) {
+                post(done, null, e.getMessage());
+            }
+        });
+    }
+
+    /** The relay's health (News running, jobs queued), for the options panel's footer. */
+    void status(final Done<JSONObject> done) {
+        io.execute(() -> {
+            try {
+                post(done, call("GET", "/v1/status", 5000), null);
+            } catch (IOException e) {
+                post(done, null, e.getMessage());
             }
         });
     }

@@ -27,6 +27,9 @@ import java.util.Locale;
 final class Front extends FrameLayout implements Scroller.Watcher {
     interface Listener {
         void onOpen(Relay.Section section, int index);
+
+        /** Shown faded: read on this TV, with "Stories you've read" set to dim. */
+        boolean isDimmed(String storyId);
     }
 
     private static final int RAIL_DP = 224, GAP_DP = 20, SIDE_DP = 34;
@@ -59,7 +62,7 @@ final class Front extends FrameLayout implements Scroller.Watcher {
         rail = new LinearLayout(c);
         rail.setOrientation(LinearLayout.VERTICAL);
         rail.setPadding(Ui.dp(26), Ui.dp(30), Ui.dp(14), Ui.dp(22));
-        rail.setBackgroundColor(0xFF161512);
+        rail.setBackgroundColor(Ui.RAIL);
         TextView mast = Ui.text(c, 31, Ui.INK, Ui.display);
         mast.setText("Broadsheet");
         rail.addView(mast);
@@ -135,9 +138,45 @@ final class Front extends FrameLayout implements Scroller.Watcher {
     /** New sections. Keeps the current section (by id) and, if asked, the focused story. */
     void setSections(List<Relay.Section> list, boolean keepFocus) {
         String currentId = current >= 0 && current < sections.size() ? sections.get(current).id : null;
-        Card focusedCard = findFocus() instanceof Card ? (Card) findFocus() : null;
-        String focusedStory = focusedCard != null ? focusedCard.story.id : null;
-        boolean railFocused = findFocus() instanceof RailItem;
+        Story focused = focusedStory();
+        restore(list, currentId, keepFocus && focused != null ? focused.id : null, railFocused(), keepFocus);
+    }
+
+    /** The story whose card has focus, or null (focus on the rail). */
+    Story focusedStory() {
+        View f = findFocus();
+        return f instanceof Card ? ((Card) f).story : null;
+    }
+
+    boolean railFocused() {
+        return findFocus() instanceof RailItem;
+    }
+
+    String statusText() {
+        return status.getText().toString();
+    }
+
+    /** Opens a section by id and focuses its first story. */
+    void open(String sectionId) {
+        for (int i = 0; i < sections.size(); i++) {
+            if (sections.get(i).id.equals(sectionId)) {
+                current = -1;
+                show(i, true);
+                railItems.get(i).post(() -> {
+                    if (!cards.isEmpty()) cards.get(0).requestFocus();
+                });
+                return;
+            }
+        }
+    }
+
+    /** Fades or restores cards after a story was read or the setting changed. */
+    void refreshDim() {
+        for (Card c : cards) c.setDim(listener.isDimmed(c.story.id));
+    }
+
+    /** Sections with a given section and story chosen: after the views were built again. */
+    void restore(List<Relay.Section> list, String currentId, String focusedStory, boolean railFocused, boolean keepFocus) {
         sections = list;
         message.setVisibility(GONE);
         page.setVisibility(VISIBLE);
@@ -182,7 +221,8 @@ final class Front extends FrameLayout implements Scroller.Watcher {
         TextView sub = Ui.text(c, 12.5f, Ui.FAINT, Ui.sansMedium);
         sub.setText(s.stories.size() + (s.stories.size() == 1 ? " story" : " stories")
                 + ("saved".equals(s.id) ? "  ·  saved in Apple News" : "latest".equals(s.id)
-                ? "  ·  newest in the archive" : "  ·  from Apple News Today"));
+                ? "  ·  newest in the archive" : "more".equals(s.id) ? "  ·  from the archive on the Mac"
+                : "  ·  from Apple News Today"));
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(-2, -2);
         sl.topMargin = Ui.dp(6);
         sl.bottomMargin = Ui.dp(18);
@@ -245,6 +285,7 @@ final class Front extends FrameLayout implements Scroller.Watcher {
     private Card card(int style, Story s, int index, long now) {
         final Card card = new Card(getContext(), style, images);
         card.bind(s, index, now);
+        card.setDim(listener.isDimmed(s.id));
         card.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {

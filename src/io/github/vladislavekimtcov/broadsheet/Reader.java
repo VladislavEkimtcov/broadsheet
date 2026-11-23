@@ -27,8 +27,8 @@ import java.util.List;
  * once, then the body when the relay has it.
  *
  * <p>Keys: Down/OK scroll about half a screen (OK at the end opens the next story), Up back,
- * Fast-forward/Rewind a full screen, Left/Right the previous/next story, Menu the text size,
- * Back the front page.
+ * Fast-forward/Rewind a full screen, Left/Right the previous/next story, Back the front page.
+ * A video scrolled into view is selected (ringed, "Play video"): OK or Play plays it.
  */
 final class Reader extends FrameLayout {
     interface Listener {
@@ -36,10 +36,12 @@ final class Reader extends FrameLayout {
 
         void onMove(int delta);
 
-        void onTextSize(int step);
+        /** OK on a video in the story. */
+        void onPlay(String stream, String title);
     }
 
-    static final float[] SIZES = {18.5f, 21f, 24f};
+    static final float[] SIZES = {18.5f, 21f, 24f, 27.5f};
+    static final String[] SIZE_NAMES = {"Small", "Medium", "Large", "Extra large"};
 
     private final Images images;
     private final Listener listener;
@@ -48,8 +50,11 @@ final class Reader extends FrameLayout {
     private final View progress;
     private final List<Picture> pictures = new ArrayList<>();
     private Story story;
+    private Article article;
     private int sizeStep = 1;
     private TextView note;
+    /** The video in view that OK plays, or null. */
+    private Picture selectedVideo;
 
     Reader(Context c, Images images, Listener listener) {
         super(c);
@@ -75,13 +80,56 @@ final class Reader extends FrameLayout {
         return story;
     }
 
+    /** The body, once it arrived. */
+    Article article() {
+        return article;
+    }
+
+    int sizeStep() {
+        return sizeStep;
+    }
+
+    /** How far through the story the page is, 0 to 1. */
+    float fraction() {
+        View child = scroll.getChildAt(0);
+        int range = child == null ? 0 : child.getHeight() - scroll.getHeight();
+        return range <= 0 ? 0f : Math.min(1f, scroll.getScrollY() / (float) range);
+    }
+
+    /** Scrolls to a place found by {@link #fraction} once the page is laid out. */
+    void restoreFraction(final float f) {
+        if (f <= 0) return;
+        final ViewTreeObserver vto = column.getViewTreeObserver();
+        vto.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                column.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                View child = scroll.getChildAt(0);
+                int range = child == null ? 0 : child.getHeight() - scroll.getHeight();
+                scroll.scrollTo(0, Math.round(range * f));
+            }
+        });
+    }
+
     void setTextSizeStep(int step) {
         sizeStep = Math.max(0, Math.min(SIZES.length - 1, step));
+    }
+
+    /** Sets the open story again (new text size), keeping the place in it. */
+    void relayout() {
+        if (story == null) return;
+        float f = fraction();
+        Story s = story;
+        Article a = article;
+        show(s);
+        if (a != null) setArticle(a, null);
+        restoreFraction(f);
     }
 
     /** Opens a story with what the card knows; the body follows with {@link #setArticle}. */
     void show(Story s) {
         story = s;
+        article = null;
         clear();
         header(s, null, 0);
         if (s.excerpt != null) column.addView(standfirst(s.excerpt));
@@ -98,13 +146,15 @@ final class Reader extends FrameLayout {
             return;
         }
         if (a.story != null && !a.story.id.equals(story.id)) return;
+        article = a;
         int y = scroll.getScrollY();
         clear();
         Story s = a.story != null ? a.story : story;
         header(s, a.byline, a.truncated ? 0 : a.words());  // a preview's length isn't the story's
         String sub = a.subtitle != null ? a.subtitle : s.excerpt;
         if (sub != null) column.addView(standfirst(sub));
-        boolean leadImage = !a.blocks.isEmpty() && "image".equals(a.blocks.get(0).type);
+        String first = a.blocks.isEmpty() ? null : a.blocks.get(0).type;
+        boolean leadImage = "image".equals(first) || "video".equals(first);
         if (!leadImage && s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
         for (Article.Block b : a.blocks) block(b);
         if (a.pendingJob != null) {
@@ -124,6 +174,7 @@ final class Reader extends FrameLayout {
     }
 
     private void clear() {
+        selectedVideo = null;
         for (Picture p : pictures) images.cancel(p);
         pictures.clear();
         column.removeAllViews();
@@ -140,7 +191,7 @@ final class Reader extends FrameLayout {
         SpannableStringBuilder b = new SpannableStringBuilder();
         if (s.channel != null) {
             b.append(s.channel.toUpperCase(java.util.Locale.getDefault()));
-            b.setSpan(new ForegroundColorSpan(s.accent), 0, b.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            b.setSpan(new ForegroundColorSpan(s.accent()), 0, b.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         String ago = Dates.ago(s.published, System.currentTimeMillis());
         if (!ago.isEmpty()) b.append(b.length() > 0 ? "   ·   " : "").append(ago);
@@ -216,10 +267,14 @@ final class Reader extends FrameLayout {
                 break;
             }
             case "image":
-            case "video":
                 addPicture(b.url, b.width, b.height, b.more > 0 ? (b.caption != null ? b.caption + "  ·  " : "")
-                        + "+" + b.more + " more photos" : b.caption, b.type.equals("video") ? 1 : 0, false);
+                        + "+" + b.more + " more photos" : b.caption, 0, false);
                 break;
+            case "video": {
+                Picture v = addPicture(b.url, b.width, b.height, b.caption, 1, false);
+                if (v != null) v.stream = b.stream;
+                break;
+            }
             case "divider": {
                 View v = new View(c);
                 v.setBackgroundColor(Ui.RULE);
@@ -235,8 +290,8 @@ final class Reader extends FrameLayout {
         }
     }
 
-    private void addPicture(String url, int w, int h, String caption, int kind, boolean lead) {
-        if (url == null) return;
+    private Picture addPicture(String url, int w, int h, String caption, int kind, boolean lead) {
+        if (url == null && kind != 1) return null;
         Picture pic = new Picture(getContext(), url, w, h, kind == 1);
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
         p.topMargin = Ui.dp(lead ? 26 : 24);
@@ -250,6 +305,7 @@ final class Reader extends FrameLayout {
             cl.topMargin = Ui.dp(8);
             column.addView(v, cl);
         }
+        return pic;
     }
 
     private TextView note(String text) {
@@ -270,9 +326,14 @@ final class Reader extends FrameLayout {
             case KeyEvent.KEYCODE_DPAD_DOWN:
                 scroll.smoothScrollBy(0, Math.round(h * 0.45f));
                 return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                if (selectedVideo != null) play(selectedVideo);
+                return true;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
-                if (atEnd()) listener.onMove(1);
+                if (selectedVideo != null) play(selectedVideo);
+                else if (atEnd()) listener.onMove(1);
                 else scroll.smoothScrollBy(0, Math.round(h * 0.45f));
                 return true;
             case KeyEvent.KEYCODE_DPAD_UP:
@@ -293,9 +354,6 @@ final class Reader extends FrameLayout {
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
                 listener.onMove(-1);
-                return true;
-            case KeyEvent.KEYCODE_MENU:
-                listener.onTextSize((sizeStep + 1) % SIZES.length);
                 return true;
             case KeyEvent.KEYCODE_BACK:
             case KeyEvent.KEYCODE_ESCAPE:
@@ -320,13 +378,19 @@ final class Reader extends FrameLayout {
             case KeyEvent.KEYCODE_PAGE_UP:
             case KeyEvent.KEYCODE_CHANNEL_DOWN:
             case KeyEvent.KEYCODE_CHANNEL_UP:
-            case KeyEvent.KEYCODE_MENU:
+            case KeyEvent.KEYCODE_MEDIA_PLAY:
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
             case KeyEvent.KEYCODE_BACK:
             case KeyEvent.KEYCODE_ESCAPE:
                 return true;
             default:
                 return false;
         }
+    }
+
+    private void play(Picture p) {
+        if (p.stream != null) listener.onPlay(p.stream, story != null ? story.title : null);
+        else listener.onPlay(null, null);  // Main explains that this one can't play here
     }
 
     private boolean atEnd() {
@@ -359,11 +423,27 @@ final class Reader extends FrameLayout {
         int[] loc = new int[2];
         int[] base = new int[2];
         column.getLocationInWindow(base);
+        Picture best = null;
+        float bestDistance = Float.MAX_VALUE;
         for (Picture p : pictures) {
             if (p.getHeight() == 0) continue;  // not laid out yet: afterLayout comes back
             p.getLocationInWindow(loc);
             int y = loc[1] - base[1] + column.getTop();
             p.setNear(y + p.getHeight() > top - scroll.getHeight() && y < bottom + scroll.getHeight() * 2);
+            if (!p.video) continue;
+            // A video becomes the one OK plays once most of it is on screen; of two, the nearer the middle.
+            int shown = Math.min(bottom, y + p.getHeight()) - Math.max(top, y);
+            if (shown < Math.min(p.getHeight(), scroll.getHeight()) * 0.6f) continue;
+            float d = Math.abs(y + p.getHeight() / 2f - (top + bottom) / 2f);
+            if (d < bestDistance) {
+                best = p;
+                bestDistance = d;
+            }
+        }
+        if (best != selectedVideo) {
+            if (selectedVideo != null) selectedVideo.invalidate();
+            selectedVideo = best;
+            if (best != null) best.invalidate();
         }
     }
 
@@ -417,10 +497,12 @@ final class Reader extends FrameLayout {
         final String url;
         final float aspect;
         final boolean video;
+        String stream;
         private Bitmap bitmap;
         private boolean near;
         private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
         private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Rect dst = new Rect();
 
         Picture(Context c, String url, int w, int h, boolean video) {
@@ -431,6 +513,8 @@ final class Reader extends FrameLayout {
             label.setColor(Ui.INK);
             label.setTypeface(Ui.sansBold);
             label.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14, getResources().getDisplayMetrics()));
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(Ui.px(3));
         }
 
         @Override
@@ -442,6 +526,7 @@ final class Reader extends FrameLayout {
         void setNear(boolean value) {
             if (value == near) return;
             near = value;
+            if (url == null) return;
             if (near) {
                 if (getWidth() > 0) images.load(this, url, getWidth(), getHeight(), true);  // else onSizeChanged
             } else {
@@ -454,7 +539,7 @@ final class Reader extends FrameLayout {
         @Override
         protected void onSizeChanged(int w, int h, int ow, int oh) {
             super.onSizeChanged(w, h, ow, oh);
-            if (near && w > 0 && h > 0) images.load(this, url, w, h, true);
+            if (near && url != null && w > 0 && h > 0) images.load(this, url, w, h, true);
         }
 
         @Override
@@ -475,10 +560,17 @@ final class Reader extends FrameLayout {
                 c.drawBitmap(bitmap, null, dst, paint);
             }
             if (video) {
-                label.setColor(0xCC000000);
-                c.drawRoundRect(Ui.px(12), h - Ui.px(44), Ui.px(112), h - Ui.px(12), Ui.px(16), Ui.px(16), label);
-                label.setColor(Ui.INK);
-                c.drawText("▶  Video", Ui.px(26), h - Ui.px(22), label);
+                boolean on = selectedVideo == this;
+                String text = on ? (stream != null ? "▶  Play video   OK" : "Plays only in Apple News") : "▶  Video";
+                float tw = label.measureText(text);
+                label.setColor(on && stream != null ? Ui.ACCENT : 0xCC000000);
+                c.drawRoundRect(Ui.px(12), h - Ui.px(48), Ui.px(40) + tw, h - Ui.px(12), Ui.px(18), Ui.px(18), label);
+                label.setColor(0xFFFFFFFF);
+                c.drawText(text, Ui.px(26), h - Ui.px(24), label);
+                if (on) {
+                    ring.setColor(Ui.FOCUS);
+                    c.drawRect(Ui.px(1.5f), Ui.px(1.5f), w - Ui.px(1.5f), h - Ui.px(1.5f), ring);
+                }
             }
         }
     }

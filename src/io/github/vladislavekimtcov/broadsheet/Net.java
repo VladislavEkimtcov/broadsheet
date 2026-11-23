@@ -46,7 +46,7 @@ final class Net {
         c.setRequestProperty("Accept-Encoding", "gzip");
         if (etag != null && !etag.isEmpty()) c.setRequestProperty("If-None-Match", etag);
         if (token != null && !token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
-        if ("POST".equals(method)) {
+        if ("POST".equals(method) || "PUT".equals(method)) {
             c.setDoOutput(true);
             c.setRequestProperty("Content-Type", "application/json");
             try (OutputStream out = c.getOutputStream()) {

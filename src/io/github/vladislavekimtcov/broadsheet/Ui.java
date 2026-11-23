@@ -7,18 +7,64 @@ import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.widget.TextView;
 
-/** Sizes, type and colours shared by every view: a dark, warm page, like newsprint at night. */
+/**
+ * Sizes, type and colours shared by every view. Two pages: dark (warm, like newsprint at night)
+ * and light (newsprint by day). Views read the colours when they are built, so switching
+ * ({@link #setLight}) is followed by building the views again.
+ */
 final class Ui {
-    static final int PAPER = 0xFF11100E;
-    static final int SURFACE = 0xFF1D1B18;
-    static final int SURFACE_HI = 0xFF2B2824;
-    static final int INK = 0xFFF4EFE6;
-    static final int BODY = 0xFFE4DED3;
-    static final int MUTED = 0xFFB1AA9E;
-    static final int FAINT = 0xFF7F786E;
-    static final int RULE = 0x24FFFFFF;
-    /** Broadsheet red: the masthead rule, the selected section, drop caps, the reading progress. */
-    static final int ACCENT = 0xFFE5484D;
+    static int PAPER, SURFACE, SURFACE_HI, INK, BODY, MUTED, FAINT, RULE, RAIL, FOCUS;
+    /** Broadsheet red: the masthead rule, the selected section, the reading progress. */
+    static int ACCENT;
+    static boolean light;
+
+    static {
+        setLight(false);
+    }
+
+    static void setLight(boolean value) {
+        light = value;
+        if (value) {
+            PAPER = 0xFFF5F0E6;
+            SURFACE = 0xFFE9E2D4;
+            SURFACE_HI = 0xFFDCD3C1;
+            INK = 0xFF1B1814;
+            BODY = 0xFF2B2722;
+            MUTED = 0xFF5B544A;
+            FAINT = 0xFF80786C;
+            RULE = 0x26000000;
+            RAIL = 0xFFEAE3D5;
+            FOCUS = 0xF21B1814;
+            ACCENT = 0xFFC4262C;
+        } else {
+            PAPER = 0xFF11100E;
+            SURFACE = 0xFF1D1B18;
+            SURFACE_HI = 0xFF2B2824;
+            INK = 0xFFF4EFE6;
+            BODY = 0xFFE4DED3;
+            MUTED = 0xFFB1AA9E;
+            FAINT = 0xFF7F786E;
+            RULE = 0x24FFFFFF;
+            RAIL = 0xFF161512;
+            FOCUS = 0xF2FFFFFF;
+            ACCENT = 0xFFE5484D;
+        }
+    }
+
+    /** Publisher accents are picked for white pages: on the dark page lift dark ones, on the
+     *  light page deepen pale ones, so the dateline always reads. */
+    static int readable(int c) {
+        float[] hsv = new float[3];
+        android.graphics.Color.colorToHSV(c, hsv);
+        if (light) {
+            if (hsv[2] > 0.62f) hsv[2] = 0.62f;
+            if (hsv[1] < 0.35f && hsv[2] > 0.45f) hsv[2] = 0.45f;
+        } else {
+            if (hsv[2] < 0.75f) hsv[2] = 0.75f + hsv[2] * 0.25f;
+            if (hsv[1] > 0.75f) hsv[1] = 0.75f;
+        }
+        return android.graphics.Color.HSVToColor(hsv);
+    }
 
     static Typeface display = Typeface.create("serif", Typeface.BOLD);
     static Typeface head = Typeface.create("serif", Typeface.BOLD);

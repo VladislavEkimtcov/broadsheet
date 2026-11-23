@@ -1,0 +1,17 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  sun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Sunrise and sunset
+        run: |
+          javac -d build/test src/io/github/vladislavekimtcov/broadsheet/Sun.java tests/SunTest.java
+          java -cp build/test io.github.vladislavekimtcov.broadsheet.SunTest

@@ -12,6 +12,8 @@ final class Article {
         /** heading, paragraph, quote, caption, image, gallery, video, divider. */
         final String type, text, url, caption;
         final int level, width, height, more;
+        /** video: the stream (HLS or MP4) when the publisher gave one. */
+        String stream;
 
         Block(String type, String text, String url, String caption, int level, int width, int height, int more) {
             this.type = type;
@@ -34,6 +36,11 @@ final class Article {
     /** A relay job still fetching the body from Apple News, or null. */
     final String pendingJob;
     final boolean jobFailed;
+    /** In Saved Stories on the Mac; liked ("like"), disliked ("dislike") or neither (null). */
+    final boolean saved;
+    final String reaction;
+    /** The story's topics as {id, name}, for "More on …". */
+    final List<String[]> topics = new ArrayList<>();
 
     Article(JSONObject data) {
         story = Story.from(data);
@@ -47,6 +54,15 @@ final class Article {
         pendingJob = job != null && ("queued".equals(state) || "running".equals(state)) ? job.optString("id") : null;
         jobFailed = job != null && ("failed".equals(state)
                 || ("succeeded".equals(state) && body == null));
+        saved = data.optBoolean("saved");
+        reaction = Story.str(data, "reaction");
+        JSONArray t = data.optJSONArray("topics");
+        for (int i = 0; t != null && i < t.length(); i++) {
+            JSONObject o = t.optJSONObject(i);
+            if (o != null && Story.str(o, "id") != null && Story.str(o, "name") != null) {
+                topics.add(new String[] {o.optString("id"), o.optString("name")});
+            }
+        }
         JSONArray a = body == null ? null : body.optJSONArray("blocks");
         if (a == null) return;
         for (int i = 0; i < a.length(); i++) {
@@ -68,11 +84,16 @@ final class Article {
                     JSONArray imgs = b.optJSONArray("images");
                     if (imgs != null && imgs.length() > 0) image(imgs.optJSONObject(0), imgs.length() - 1);
                     break;
-                case "video":
-                    String poster = Story.str(b, "poster");
-                    // The poster carries a "Video" badge; a caption only if the story gave one.
-                    if (poster != null) blocks.add(new Block("video", null, poster, Story.str(b, "caption"), 0, 0, 0, 0));
+                case "video": {
+                    String poster = Story.str(b, "poster"), stream = Story.str(b, "url");
+                    if (poster == null && stream == null) break;
+                    double ratio = b.optDouble("aspect_ratio", 16 / 9.0);
+                    Block v = new Block("video", null, poster, Story.str(b, "caption"), 0, 1000,
+                            (int) Math.round(1000 / Math.max(0.3, ratio)), 0);
+                    v.stream = stream;
+                    blocks.add(v);
                     break;
+                }
                 case "divider":
                     if (!blocks.isEmpty()) blocks.add(new Block("divider", null, null, null, 0, 0, 0, 0));
                     break;

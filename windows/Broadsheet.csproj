@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Legacy (non-SDK) project on purpose: it builds with the MSBuild 4.0 and C# 5 compiler that ship
+     inside Windows (.NET Framework 4.8), with no SDK, no Visual Studio and no NuGet. See build.cmd. -->
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <RootNamespace>Broadsheet</RootNamespace>
+    <AssemblyName>Broadsheet</AssemblyName>
+    <OutputPath>bin\</OutputPath>
+    <IntermediateOutputPath>obj\</IntermediateOutputPath>
+    <Configuration>Release</Configuration>
+    <Optimize>true</Optimize>
+    <DebugType>none</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <WarningLevel>4</WarningLevel>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateManifests>false</GenerateManifests>
+    <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+  </ItemGroup>
+  <ItemGroup>
+    <ApplicationDefinition Include="App.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </ApplicationDefinition>
+    <Compile Include="src\App.xaml.cs"><DependentUpon>App.xaml</DependentUpon></Compile>
+    <Compile Include="src\AssemblyInfo.cs" />
+    <Compile Include="src\Json.cs" />
+    <Compile Include="src\Net.cs" />
+    <Compile Include="src\Dates.cs" />
+    <Compile Include="src\Sun.cs" />
+    <Compile Include="src\Model.cs" />
+    <Compile Include="src\Store.cs" />
+    <Compile Include="src\Relay.cs" />
+    <Compile Include="src\Ui.cs" />
+    <Compile Include="src\Images.cs" />
+    <Compile Include="src\Scroller.cs" />
+    <Compile Include="src\Card.cs" />
+    <Compile Include="src\Front.cs" />
+    <Compile Include="src\Reader.cs" />
+    <Compile Include="src\Options.cs" />
+    <Compile Include="src\Player.cs" />
+    <Compile Include="src\MainWindow.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Newsreader (SIL OFL 1.1), the same cuts the TV app ships, compiled into the exe. -->
+    <Resource Include="..\assets\fonts\newsreader-*.ttf">
+      <Link>fonts\%(Filename)%(Extension)</Link>
+    </Resource>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

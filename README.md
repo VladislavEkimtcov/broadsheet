@@ -88,6 +88,13 @@ url=http://192.168.1.20:8787
 adb push relay.conf /sdcard/Android/data/io.github.vladislavekimtcov.broadsheet/files/relay.conf
 ```
 
+## Windows
+
+[`windows/`](windows/README.md) has a Windows desktop port of Broadsheet: the same front page,
+reader and options, with mouse, touchpad and keyboard. It's a single `Broadsheet.exe` that
+builds and runs on a bare Windows 10/11 (IoT Enterprise LTSC included) with what ships in the
+box (.NET Framework 4.8, MSBuild 4.0, C# 5): `windows\build.cmd`.
+
 ## Build
 
 No Gradle, no libraries: the bare Android SDK and JDK 17.

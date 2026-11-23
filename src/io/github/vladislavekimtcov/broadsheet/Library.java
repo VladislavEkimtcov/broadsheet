@@ -58,6 +58,22 @@ final class Library {
         dirty = true;
     }
 
+    /** Forgets that a story was read here: it is new again (not dimmed or hidden, starts at the top). */
+    void markUnread(String id) {
+        read.remove(id);
+        Story s = last == null ? null : Story.from(last.optJSONObject("story"));
+        if (s != null && s.id.equals(id)) last = null;
+        dirty = true;
+    }
+
+    /** Counts a story as read without opening it (keeps a place already reached in it). */
+    void markRead(String id) {
+        Float f = read.get(id);
+        read.put(id, f == null ? 1f : f);
+        trim(read, KEEP_READ);
+        dirty = true;
+    }
+
     /** The last story read here when it was left unfinished in the past week, or null. */
     Story unfinished() {
         if (last == null || System.currentTimeMillis() - last.optLong("at") > 7 * 86400000L) return null;

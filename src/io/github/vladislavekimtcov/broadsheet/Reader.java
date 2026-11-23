@@ -710,7 +710,7 @@ final class Reader extends FrameLayout {
                 String text = on ? (stream != null ? "▶  Play video   OK" : "Plays only in Apple News") : "▶  Video";
                 float tw = label.measureText(text);
                 label.setColor(on && stream != null ? Ui.ACCENT : 0xCC000000);
-                c.drawRoundRect(Ui.px(12), h - Ui.px(48), Ui.px(40) + tw, h - Ui.px(12), Ui.px(18), Ui.px(18), label);
+                c.drawRect(Ui.px(12), h - Ui.px(48), Ui.px(40) + tw, h - Ui.px(12), label);
                 label.setColor(0xFFFFFFFF);
                 c.drawText(text, Ui.px(26), h - Ui.px(24), label);
                 if (on) {

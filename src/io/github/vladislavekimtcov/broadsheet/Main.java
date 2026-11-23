@@ -66,7 +66,11 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     // the options panel's state
     private Story target;
-    private Options.Tile saveTile, reactTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile;
+    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile;
+    /** The open story was marked unread: leaving it mustn't count it as read again. */
+    private String keptUnread;
+    /** The story on screen in the reader, or null while the front page shows. */
+    private Story reading;
     private final List<String[]> moreChoices = new ArrayList<>();
     private int moreIndex;
     private boolean saveBusy, reactBusy, moreBusy;
@@ -293,6 +297,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     private void open(final Story s) {
         leaveStory();
+        keptUnread = null;
+        reading = s;
         reader.show(s);
         float at = library.position(s.id);
         pendingRestore = at > 0.04f && at < 0.95f ? at : 0f;
@@ -366,8 +372,9 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     /** Remembers how far into the open story the reader got. */
     private void leaveStory() {
-        Story s = reader.story();
-        if (s == null || reader.getVisibility() != View.VISIBLE || reader.article() == null) return;
+        Story s = reading;
+        if (s == null || reader.story() != s || reader.article() == null) return;
+        if (s.id.equals(keptUnread)) return;
         float f = reader.fraction();
         library.setPosition(s, f > 0.97f ? 1f : f);
     }
@@ -384,6 +391,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     @Override
     public void onClose() {
         leaveStory();
+        reading = null;
         library.save();
         reader.setVisibility(View.GONE);
         if (front.currentSection() == openSection) front.focusStory(openIndex);
@@ -537,6 +545,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         reactTile.onOk = this::sendReaction;
         String r = s == null ? null : library.reaction(s.id);
         reactTile.segment = "dislike".equals(r) ? 1 : 0;
+        unreadTile = new Options.Tile("○", "Mark as unread");
+        unreadTile.onOk = this::toggleRead;
         moreTile = new Options.Tile("≡", "More like this");
         moreTile.onStep = d -> {
             moreIndex = Math.max(0, Math.min(moreChoices.size() - 1, moreIndex + d));
@@ -592,6 +602,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         List<Options.Tile> tiles = new ArrayList<>();
         tiles.add(saveTile);
         tiles.add(reactTile);
+        tiles.add(unreadTile);
         tiles.add(moreTile);
         tiles.add(sizeTile);
         tiles.add(themeTile);
@@ -663,6 +674,14 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         reactTile.hint = !has ? pick : reactError != null ? reactError : r != null ? "OK on it again takes it back"
                 : "Apple News suggests more or fewer like it";
 
+        boolean read = has && library.isRead(s.id) && !s.id.equals(keptUnread);
+        unreadTile.enabled = has;
+        unreadTile.icon = read ? "○" : "●";
+        unreadTile.label = read ? "Mark as unread" : "Mark as read";
+        unreadTile.hint = !has ? pick : read ? "Read on this TV  ·  OK makes it new again"
+                : "dim".equals(readMode()) ? "OK fades it on the front page" : "hide".equals(readMode())
+                ? "OK hides it from the front page" : "OK counts it as read";
+
         moreTile.enabled = has && !moreChoices.isEmpty();
         String[] choice = moreTile.enabled ? moreChoices.get(moreIndex) : null;
         moreTile.label = choice != null ? choice[0] : "More like this";
@@ -693,6 +712,27 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         refreshTile.value = loadedAt > 0 ? "Updated " + time(loadedAt) : "";
         refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
                 : "Automatically " + AUTO_REFRESH_NAMES[autoRefreshStep()] + "  ·  ◀ ▶";
+    }
+
+    /** Read on this TV or new again: what dims (or hides) it on the front page. */
+    private void toggleRead() {
+        Story s = target;
+        if (s == null) return;
+        boolean reading = reader.getVisibility() == View.VISIBLE && reader.story() != null && reader.story().id.equals(s.id);
+        if (library.isRead(s.id) && !s.id.equals(keptUnread)) {
+            library.markUnread(s.id);
+            if (reading) keptUnread = s.id;
+        } else {
+            library.markRead(s.id);
+            if (s.id.equals(keptUnread)) keptUnread = null;
+        }
+        library.save();
+        if ("hide".equals(readMode()) && !reading) {
+            shown = arrange();
+            if (!shown.isEmpty()) front.setSections(shown, true);
+        }
+        front.refreshDim();
+        fillOptions();
     }
 
     private void toggleSave() {
@@ -769,6 +809,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         options.close();
         if (reader.getVisibility() == View.VISIBLE) {
             leaveStory();
+            reading = null;
             reader.setVisibility(View.GONE);
         }
         front.setSections(shown, false);

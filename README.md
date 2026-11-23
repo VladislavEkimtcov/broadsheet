@@ -10,7 +10,7 @@ Apple News has no Android app and no reader API, so Broadsheet gets the news fro
 that runs on your Mac and turns the News app into a local JSON API. The TV finds the relay on
 your network by itself.
 
-![Broadsheet's front page on a TV: a rail of sections on the left, a hero story, two briefs and rows of picture cards](docs/front-page.jpg)
+![Broadsheet's front page on a TV, light by day: a rail of sections on the left, a hero story, two briefs and a row of picture cards](docs/front-page.jpg)
 
 - **Front page:** a rail of sections on the left; a hero story, two briefs and rows of picture
   cards. Moving along the rail skims sections; cached pages open instantly. The hero's words sit
@@ -30,6 +30,7 @@ your network by itself.
   - **On the Mac** (like Handoff): when you're reading a story in Apple News on the Mac, or were
     in the last half hour, it's at the top of the panel; OK carries on with it on the TV.
   - **Save story** to Saved Stories on the Mac, or take it out again.
+  - **Mark as unread** (or as read): a story read on the TV stops being dimmed or hidden.
   - **Like or dislike**: Apple News's *Suggest More / Fewer Stories Like This*. OK on the same one
     takes it back.
   - **More from** the publisher, **More on** one of the story's topics, or **Related stories**,
@@ -53,9 +54,15 @@ your network by itself.
 - **Private:** what you read, how far, and your likes stay on the TV (`library.json` in the app's
   files). The Mac only learns what the TV asks of it.
 
-![The options panel over the front page in the light theme: Save story, Like or dislike, More from The Hill, Text size, Appearance](docs/options.jpg)
+![The options panel over the front page: Like or dislike with thumb icons, Mark as unread, More from NBC News, and the text size slider at 18.5 pt](docs/options.jpg)
+
+![The same front page after sunset, in the dark theme](docs/front-page-dark.jpg)
 
 ![The reader: dateline, headline, byline, standfirst and the lead picture in a single serif column](docs/reader.jpg)
+
+| | |
+|---|---|
+| ![A video in a story, selected as it scrolled into view: a ring and a red "Play video OK" label](docs/video.jpg) | ![A story on its way: the band at the bottom says "Asking the Mac for the story… 4 s" over a red bar, with "Running the press…" on the right](docs/loading.jpg) |
 
 ## Setup
 

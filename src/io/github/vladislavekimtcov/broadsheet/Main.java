@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -21,17 +23,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Broadsheet: a news reader for Android TV that shows Apple News, by way of Apple News Relay on a
  * Mac. Front page and reader live in one window; the reader slides over the front page, the
  * options panel (Menu) over both, and a story's video over everything.
  */
-public final class Main extends Activity implements Front.Listener, Reader.Listener, Player.Listener, Options.Listener {
+public final class Main extends Activity implements Front.Listener, Reader.Listener, Player.Listener, Options.Listener,
+        Events.Listener {
     /** Seconds the relay may spend getting a story's body from Apple News before answering. */
     private static final int FETCH_WAIT = 14;
     /** With nothing on screen, look for the relay again this often. */
     private static final long RETRY_MS = 30 * 1000L;
+    /** Without the relay's event stream, check the front page this often. */
+    private static final long POLL_MS = 10 * 60 * 1000L;
+    /** Resting on a card this long counts as looking at it. */
+    private static final int CARD_REST_MS = 300;
     /** Screens of Today to scroll on the Mac when refreshing: four found the most (docs/PLAYBOOK.md). */
     private static final int REFRESH_PAGES = 4;
 
@@ -45,6 +54,26 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     private Relay relay;
     private Images images;
     private Library library;
+    private Bodies bodies;
+    private Events events;
+    /** This TV's name for its interest list at the relay. */
+    private String clientId;
+    private final Interest interest = new Interest();
+    /** Disk work for the stories kept on the TV, one thing at a time and in order. */
+    private final ExecutorService disk = Executors.newSingleThreadExecutor();
+    /** The front page's version at the relay, to tell whether a change is news. */
+    private long frontVersion;
+    /** A newer front page that came while reading; shown on the way out. */
+    private List<Relay.Section> deferred;
+    /** Stories the relay has a body for, learnt since the front page came. */
+    private final Set<String> bodied = new HashSet<>();
+    private final Set<String> headsAsked = new HashSet<>();
+    /** Sections with a page on its way. */
+    private final Set<String> paging = new HashSet<>();
+    /** The open story: the relay job it waits on, when it opened, and what was asked for it. */
+    private String waitingJob;
+    private long openedAt;
+    private boolean restAsked, aheadAsked;
     private SharedPreferences prefs;
     private FrameLayout root;
     private Front front;
@@ -78,6 +107,27 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     private final Runnable retry = this::load;
     private final Runnable themeTick = this::applyTheme;
+    /** A change at the relay: reload once the remote has been still for a moment, so the page
+     *  doesn't change under someone moving around it. */
+    private final Runnable reloadSoon = new Runnable() {
+        @Override
+        public void run() {
+            long still = SystemClock.uptimeMillis() - lastKeyAt;
+            if (still < 8000) {
+                root.postDelayed(this, 8000 - still);
+                return;
+            }
+            load();
+        }
+    };
+    private long lastKeyAt;
+    private final Runnable poll = new Runnable() {
+        @Override
+        public void run() {
+            if (events.downFor() > 2 * 60 * 1000L) load();
+            root.postDelayed(this, POLL_MS);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -92,21 +142,32 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         relay = new Relay(this);
         images = new Images(new File(getCacheDir(), "img"));
         library = new Library(getFilesDir());
+        bodies = new Bodies(new File(getCacheDir(), "bodies"));
+        events = new Events(relay, this);
+        clientId = prefs.getString("client", null);
+        if (clientId == null) {
+            clientId = "tv-" + Long.toHexString(new java.security.SecureRandom().nextLong() & 0xffffffffffL);
+            prefs.edit().putString("client", clientId).apply();
+        }
         new Thread(() -> images.prune(150L * 1024 * 1024), "prune").start();
+        disk.execute(bodies::prune);
         Ui.setLight(wantLight());
         root = new FrameLayout(this);
         setContentView(root);
         buildViews();
 
-        List<Relay.Section> cached = relay.cachedFront();  // feature: front.cache
-        if (cached != null && !cached.isEmpty()) {
-            setBase(cached);
-            front.setSections(shown, false);
-            loadedAt = relay.cachedFrontTime();
-            front.setStatus("From " + time(loadedAt) + "\nConnecting to the Mac…");
-        } else {
-            showMessage("Looking for Apple News Relay on your network…");
-        }
+        relay.cachedFront((page, error) -> {  // feature: front.cache
+            if (front.hasContent()) return;  // the relay answered first
+            if (page != null && !page.sections.isEmpty()) {
+                setBase(page.sections);
+                front.setSections(shown, false);
+                loadedAt = relay.cachedFrontTime();
+                frontVersion = page.version;
+                front.setStatus("From " + time(loadedAt) + "\nConnecting to the Mac…");
+            } else if (loading) {
+                showMessage("Looking for Apple News Relay on your network…");
+            }
+        });
         load();
     }
 
@@ -133,15 +194,29 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     }
 
     @Override
+    protected void onStart() {
+        super.onStart();
+        events.start();
+        root.removeCallbacks(poll);
+        root.postDelayed(poll, POLL_MS);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         applyTheme();
-        if (!front.hasContent() || System.currentTimeMillis() - loadedAt > 10 * 60 * 1000L) load();
+        // The event stream says when the Mac's page changes; without it, look after ten minutes.
+        if (!front.hasContent() || (!events.connected() && System.currentTimeMillis() - loadedAt > POLL_MS)) load();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
+        events.stop();
+        interest.clear();
+        images.cancelWarm();
+        root.removeCallbacks(poll);
+        root.removeCallbacks(reloadSoon);
         root.removeCallbacks(retry);
         root.removeCallbacks(themeTick);
         if (player.playing()) player.stop();
@@ -190,9 +265,9 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             return;
         }
         loading = true;
-        relay.front((sections, error) -> {
+        relay.front((page, error) -> {
             loading = false;
-            if (sections == null) {
+            if (page == null) {
                 if ("last known".equals(relay.origin())) {
                     // The Mac may have a new address: look again once.
                     relay.discover((url, e2) -> {
@@ -204,19 +279,75 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 fail(error);
                 return;
             }
-            if (sections.isEmpty()) {
+            if (page.unchanged) {  // nothing new: nothing on screen moves
+                loadedAt = System.currentTimeMillis();
+                front.setStatus("Updated " + time(loadedAt) + "\nApple News via " + relay.where());
+                maybeRefreshToday();
+                return;
+            }
+            if (page.sections.isEmpty()) {
                 fail("The relay has no stories yet. Open Apple News on the Mac once.");
                 return;
             }
-            boolean first = !front.hasContent();
-            setBase(sections);
-            savedNow.clear();
-            front.setSections(shown, !first);
+            frontVersion = page.version;
             loadedAt = System.currentTimeMillis();
-            front.setStatus("Updated " + time(loadedAt) + "\nApple News via " + relay.where());
-            fillOptions();
-            maybeRefreshToday();
+            if (reader.getVisibility() == View.VISIBLE && front.hasContent()) {
+                deferred = page.sections;  // the page under the story changes when the story closes
+                return;
+            }
+            apply(page.sections);
         });
+    }
+
+    private void apply(List<Relay.Section> sections) {
+        boolean first = !front.hasContent();
+        deferred = null;
+        setBase(sections);
+        savedNow.clear();
+        front.setSections(shown, !first);
+        front.setStatus("Updated " + time(loadedAt) + "\nApple News via " + relay.where());
+        fillOptions();
+        maybeRefreshToday();
+    }
+
+    // -------------------------------------------------------------- live
+
+    @Override
+    public void onEvent(String type, JSONObject data) {  // feature: front.live
+        switch (type) {
+            case "hello":  // (re)connected: was anything missed?
+                if (data.optLong("front_version") != frontVersion && !loading) load();
+                break;
+            case "front.updated":
+                if (data.optLong("version") == frontVersion) break;
+                root.removeCallbacks(reloadSoon);
+                root.postDelayed(reloadSoon, 1500);  // changes come in bursts
+                break;
+            case "article.body_captured": {
+                String id = data.optString("id");
+                bodied.add(id);
+                Article a = reader.article();
+                if (reading != null && id.equals(reading.id) && waitingJob == null && a != null
+                        && "summary".equals(a.completeness)) {
+                    fetchOpen(reading);  // it came after all
+                } else if (interest.wants(id)) {
+                    pullHead(id);
+                }
+                break;
+            }
+            case "job.updated":
+                if (waitingJob != null && waitingJob.equals(data.optString("id")) && "running".equals(data.optString("state"))) {
+                    reader.setStage("Apple News is fetching it on the Mac…");
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    @Override
+    public void onStream(boolean up) {
+        if (up && !front.hasContent() && !loading) load();
     }
 
     private void setBase(List<Relay.Section> sections) {
@@ -241,7 +372,12 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             }
             List<Story> keep = new ArrayList<>();
             for (Story st : s.stories) if (!library.isRead(st.id)) keep.add(st);
-            if (!keep.isEmpty()) out.add(new Relay.Section(s.id, s.title, keep));
+            if (keep.isEmpty()) continue;
+            Relay.Section copy = new Relay.Section(s.id, s.title, keep);
+            copy.next = s.next;
+            copy.total = s.total;
+            copy.today = s.today;
+            out.add(copy);
         }
         return out;
     }
@@ -304,14 +440,39 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         pendingRestore = at > 0.04f && at < 0.95f ? at : 0f;
         library.setPosition(s, at);
         library.save();
-        // Ask without waiting, to say at once what the Mac is doing; then wait on its job.
-        relay.article(s.id, 0, (a, error) -> {
+        waitingJob = null;
+        restAsked = aheadAsked = false;
+        openedAt = SystemClock.uptimeMillis();
+        disk.execute(() -> {  // feature: reader.body_cache
+            final JSONObject kept = bodies.get(s.id);
+            root.post(() -> {
+                if (reader.story() != s) return;
+                if (kept == null) {
+                    fetchOpen(s);
+                    return;
+                }
+                arrived(s, new Article(kept), null, "kept on the TV");
+                // Kept text doesn't change; whether it's saved or liked may have.
+                relay.articleState(s.id, (st, e) -> {
+                    if (st == null || reader.story() != s) return;
+                    library.setReaction(s.id, Story.str(st, "reaction"));
+                    if (st.has("saved")) savedNow.put(s.id, st.optBoolean("saved"));
+                    fillOptions();
+                });
+            });
+        });
+    }
+
+    /** One trip: the relay waits for Apple News (up to {@link #FETCH_WAIT} s) and sends the opening. */
+    private void fetchOpen(final Story s) {
+        relay.article(s.id, FETCH_WAIT, Relay.HEAD_CHARS, (a, error) -> {
             if (reader.story() != s) return;
             if (a == null || a.pendingJob == null) {
-                arrived(s, a, error);
+                arrived(s, a, error, "from the Mac");
                 return;
             }
-            reader.setStage("queued".equals(a.jobState) ? "Waiting its turn on the Mac…" : "Apple News is fetching it on the Mac…");
+            waitingJob = a.pendingJob;
+            reader.setStage("queued".equals(a.jobState) ? "Waiting its turn on the Mac…" : "Still fetching: big stories and Apple News+ take longer…");
             follow(s, a.pendingJob, 0);
         });
     }
@@ -321,52 +482,234 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         relay.job(job, 12, (state, e) -> {
             if (reader.story() != s) return;
             if ("running".equals(state) || "queued".equals(state)) {
-                if (round < 3) {
+                if (round < 2) {
                     reader.setStage("Still fetching: big stories and Apple News+ take longer…");
                     follow(s, job, round + 1);
                     return;
                 }
             }
-            relay.article(s.id, 0, (again, e2) -> {
+            waitingJob = null;
+            relay.article(s.id, 0, Relay.HEAD_CHARS, (again, e2) -> {
                 if (reader.story() != s) return;
-                arrived(s, again, e2);
+                arrived(s, again, e2, "from the Mac");
             });
         });
     }
 
     // ------------------------------------------------------------ ahead of time
 
-    private final Set<String> prefetched = new HashSet<>();
     private Story focusedStory;
-    private final Runnable prefetchFocused = () -> {  // feature: reader.prefetch
-        if (focusedStory != null && reader.getVisibility() != View.VISIBLE) prefetch(focusedStory);
+    private int focusedIndex;
+    /** Resting on a card: it and the cards around it. */
+    private final Runnable aheadFocused = () -> {  // feature: reader.prefetch
+        Relay.Section sec = front.currentSection();
+        if (focusedStory == null || sec == null || reader.getVisibility() == View.VISIBLE) return;
+        int[] around = Ladder.around(focusedIndex, sec.stories.size());
+        interest.want(pick(sec, around));
+        for (int k = 0; k < Math.min(2, around.length); k++) pullHeadIfThere(sec.stories.get(around[k]));
     };
 
     @Override
-    public void onFocusStory(Story story) {
+    public void onFocusStory(Story story, int index) {
         focusedStory = story;
-        root.removeCallbacks(prefetchFocused);
-        root.postDelayed(prefetchFocused, 700);  // resting on it, not skimming past
+        focusedIndex = index;
+        root.removeCallbacks(aheadFocused);
+        root.postDelayed(aheadFocused, CARD_REST_MS);  // resting on it, not skimming past
     }
 
-    /** The story after the open one, so Right opens at once. */
-    private void prefetchNext() {
-        if (openSection != null && openIndex + 1 < openSection.stories.size()) prefetch(openSection.stories.get(openIndex + 1));
+    @Override
+    public void onRailFocus(int index, int direction) {  // feature: front.warm
+        if (index < 0 || index >= shown.size()) return;
+        int[] hero = front.heroSize();
+        int tile = front.tileWidth();
+        int[] beside = Ladder.railNeighbours(index, shown.size(), direction);
+        List<String> urls = new ArrayList<>();
+        for (int n : beside) {
+            Relay.Section s = shown.get(n);
+            boolean heroed = s.stories.size() >= 3;
+            for (int k = 0; k < Math.min(6, s.stories.size()) && urls.size() < 12; k++) {
+                if (heroed && (k == 1 || k == 2)) continue;  // briefs have no picture
+                urls.add(s.stories.get(k).imageFor(heroed && k == 0 ? hero[0] : tile));
+            }
+        }
+        images.warm(urls);
+        if (beside.length > 0 && shown.get(beside[0]).stories.size() >= 3) {
+            // The way the reader is going: that section's hero ready to draw.
+            images.preload(shown.get(beside[0]).stories.get(0).imageFor(hero[0]), hero[0], hero[1], false);
+        }
     }
 
-    private void prefetch(Story s) {
-        if (!"summary".equals(s.completeness) || !prefetched.add(s.id)) return;
-        relay.prefetch(s.id);
+    @Override
+    public void onRailRest(int index) {
+        if (index < 0 || index >= shown.size() || reader.getVisibility() == View.VISIBLE) return;
+        Relay.Section s = shown.get(index);
+        List<Story> first = new ArrayList<>(s.stories.subList(0, Math.min(3, s.stories.size())));
+        interest.want(first);
+        for (Story st : first) pullHeadIfThere(st);
     }
 
-    private void arrived(Story s, Article a, String error) {
+    @Override
+    public void onNearEnd(Relay.Section section) {
+        loadMore(section);
+    }
+
+    /** The next page of a section, under the cards already there. */
+    private void loadMore(final Relay.Section sec) {  // feature: front.deep
+        if (sec.next == null || !paging.add(sec.id)) return;
+        relay.page(sec.next, (page, e) -> {
+            paging.remove(sec.id);
+            if (page == null) return;
+            Relay.Section whole = null;
+            for (Relay.Section b : base) if (b.id.equals(sec.id)) whole = b;
+            if (whole != null && whole != sec) {
+                add(whole, page.stories, false);
+                whole.next = page.next;
+            }
+            add(sec, page.stories, whole != null && whole != sec);
+            sec.next = page.next;
+            front.append(sec);
+        });
+    }
+
+    private void add(Relay.Section sec, List<Story> more, boolean unreadOnly) {
+        Set<String> have = new HashSet<>();
+        for (Story st : sec.stories) have.add(st.id);
+        for (Story st : more) if (have.add(st.id) && (!unreadOnly || !library.isRead(st.id))) sec.stories.add(st);
+    }
+
+    @Override
+    public void onNearLoadedEnd() {
+        loadRest(reading);
+    }
+
+    /** The rest of the open story, once the reader gets near the end of its opening. */
+    private void loadRest(final Story s) {  // feature: reader.progressive
+        final int from = reader.nextBlock();
+        if (s == null || reader.story() != s || from < 0 || restAsked) return;
+        restAsked = true;
+        relay.articleRest(s.id, from, (rest, e) -> {
+            restAsked = false;
+            if (reader.story() != s || rest == null) return;
+            reader.appendBlocks(rest);
+            final JSONObject json = rest.json;
+            disk.execute(() -> bodies.merge(s.id, json));
+            if (pendingRestore > 0 && reader.nextBlock() < 0) {
+                reader.restoreFraction(pendingRestore);
+                pendingRestore = 0;
+            }
+        });
+    }
+
+    @Override
+    public void onNearStoryEnd() {
+        if (aheadAsked || openSection == null) return;
+        aheadAsked = true;
+        int n = openSection.stories.size();
+        interest.want(pick(openSection, Ladder.reading(openIndex, n)));
+        if (openIndex + 1 < n) {
+            Story next = openSection.stories.get(openIndex + 1);
+            pullHeadIfThere(next);
+            images.warm(java.util.Collections.singletonList(next.imageFor(Ui.dp(700))));
+        }
+        if (openSection.next != null && openIndex + 3 >= n) loadMore(openSection);
+    }
+
+    private static List<Story> pick(Relay.Section sec, int[] indexes) {
+        List<Story> out = new ArrayList<>();
+        for (int i : indexes) out.add(sec.stories.get(i));
+        return out;
+    }
+
+    /** Whether the relay has the story's body (so the TV can take its opening now). */
+    private boolean onRelay(Story s) {
+        return bodied.contains(s.id) || !"summary".equals(s.completeness);
+    }
+
+    private void pullHeadIfThere(Story s) {
+        if (onRelay(s)) pullHead(s.id);
+    }
+
+    /** Puts a story's opening on the TV, if the relay has it and the TV doesn't. */
+    private void pullHead(final String id) {
+        if (!relay.modern() || headsAsked.size() > 500 || !headsAsked.add(id)) return;
+        disk.execute(() -> {
+            if (bodies.has(id)) return;
+            relay.head(id, (data, e) -> {
+                if (data != null) disk.execute(() -> bodies.put(data));
+            });
+        });
+    }
+
+    /**
+     * The stories the reader may open next, sent to the relay (which has Apple News fetch them in
+     * that order). Only stories the relay has no body for go; a list the same as the last isn't
+     * sent again, and lists go at most every 400 ms, the newest replacing the one before.
+     */
+    private final class Interest {
+        private List<String> sent = new ArrayList<>(), pending;
+        private long sentAt;
+        private final Runnable send = this::sendNow;
+
+        void want(List<Story> stories) {
+            List<String> ids = new ArrayList<>();
+            for (Story st : stories) if (st != null && !onRelay(st) && !ids.contains(st.id)) ids.add(st.id);
+            if (ids.equals(pending != null ? pending : sent)) return;
+            pending = ids;
+            root.removeCallbacks(send);
+            root.postDelayed(send, Math.max(0, sentAt + 400 - SystemClock.uptimeMillis()));
+        }
+
+        boolean wants(String id) {
+            return sent.contains(id);
+        }
+
+        private void sendNow() {
+            if (pending == null) return;
+            sent = pending;
+            pending = null;
+            sentAt = SystemClock.uptimeMillis();
+            relay.interest(clientId, sent, (cached, e) -> {
+                if (cached == null) return;
+                bodied.addAll(cached);
+                for (String id : cached) pullHead(id);
+            });
+        }
+
+        void clear() {
+            root.removeCallbacks(send);
+            pending = null;
+            if (sent.isEmpty()) return;
+            sent = new ArrayList<>();
+            relay.clearInterest(clientId);
+        }
+    }
+
+    private void arrived(Story s, Article a, String error, String source) {
         reader.setArticle(a, error);
         if (a == null) return;
-        if (a.pendingJob == null) prefetchNext();
+        Log.i("Broadsheet", "open " + s.id + " " + (SystemClock.uptimeMillis() - openedAt) + " ms " + source
+                + (a.nextBlock >= 0 ? " (opening)" : "") + " " + a.completeness);
+        if (a.pendingJob == null && !"summary".equals(a.completeness)) {
+            bodied.add(s.id);
+            if (!"kept on the TV".equals(source)) {
+                final JSONObject json = a.json;
+                disk.execute(() -> bodies.put(json));
+            }
+            // Right should open at once: the next story, fetched ahead.
+            if (openSection != null && openIndex + 1 < openSection.stories.size()) {
+                Story next = openSection.stories.get(openIndex + 1);
+                interest.want(java.util.Collections.singletonList(next));
+                pullHeadIfThere(next);
+            }
+        }
         library.setReaction(s.id, a.reaction);
         if (pendingRestore > 0 && a.pendingJob == null) {
-            reader.restoreFraction(pendingRestore);
-            pendingRestore = 0;
+            if (a.nextBlock >= 0) {
+                loadRest(s);  // the place is somewhere in the whole story
+            } else {
+                reader.restoreFraction(pendingRestore);
+                pendingRestore = 0;
+            }
         }
     }
 
@@ -392,9 +735,14 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     public void onClose() {
         leaveStory();
         reading = null;
+        waitingJob = null;
         library.save();
         reader.setVisibility(View.GONE);
-        if (front.currentSection() == openSection) front.focusStory(openIndex);
+        if (deferred != null) {
+            apply(deferred);  // the page changed while reading
+        } else if (front.currentSection() == openSection) {
+            front.focusStory(openIndex);
+        }
         front.refreshDim();
     }
 
@@ -638,7 +986,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 return;
             }
             JSONObject news = o.optJSONObject("news_app"), jobs = o.optJSONObject("jobs"), acct = o.optJSONObject("account");
-            int waiting = jobs == null ? 0 : jobs.optInt("queued") + jobs.optInt("running");
+            // Stories fetched ahead aren't anyone waiting.
+            int waiting = jobs == null ? 0 : Math.max(0, jobs.optInt("queued") + jobs.optInt("running") - jobs.optInt("warming"));
             options.setFooter("Mac connected  ·  News " + (news != null && news.optBoolean("running") ? "open" : "closed")
                     + "  ·  " + (waiting == 0 ? "nothing waiting" : waiting + " waiting")
                     + (acct != null && acct.optBoolean("news_plus") ? "  ·  Apple News+" : ""));
@@ -842,6 +1191,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        lastKeyAt = SystemClock.uptimeMillis();
         if (player.playing()) {
             if (player.onKey(e)) return true;
             return super.dispatchKeyEvent(e);

@@ -32,8 +32,20 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         boolean isDimmed(String storyId);
 
         /** A card got focus (to fetch its story ahead if it stays there). */
-        void onFocusStory(Story story);
+        void onFocusStory(Story story, int index);
+
+        /** Focus came to a section on the rail ({@code direction}: +1 down, -1 up, 0 first time). */
+        void onRailFocus(int index, int direction);
+
+        /** Focus stayed on a section of the rail for a moment: the reader is looking at it. */
+        void onRailRest(int index);
+
+        /** Focus reached the last rows of a section that has more to load. */
+        void onNearEnd(Relay.Section section);
     }
+
+    /** Resting on the rail this long counts as looking at the section. */
+    private static final int RAIL_REST_MS = 375;
 
     private static final int RAIL_DP = 224, GAP_DP = 20, SIDE_DP = 34;
 
@@ -48,6 +60,20 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     private final List<Card> cards = new ArrayList<>();
     private List<Relay.Section> sections = new ArrayList<>();
     private int current = -1;
+    /** The section's sub line, the last row of tiles and how many cards it holds, and how many
+     *  stories have cards: for {@link #append}. */
+    private TextView sub;
+    private LinearLayout lastRow;
+    private int lastRowCount, built, railAt = -1;
+    /** The focused card's place before a rebuild, for when its story isn't there any more. */
+    private int restoreIndex = -1;
+    private final Runnable railRest = new Runnable() {
+        @Override
+        public void run() {
+            View f = findFocus();
+            if (f instanceof RailItem) listener.onRailRest(((RailItem) f).index);
+        }
+    };
     private final Runnable switchSection = new Runnable() {
         @Override
         public void run() {
@@ -124,6 +150,7 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     void setStatus(String text) {
+        if (TextUtils.equals(status.getText(), text)) return;  // nothing to redraw
         status.setText(text);
     }
 
@@ -141,7 +168,12 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     /** New sections. Keeps the current section (by id) and, if asked, the focused story. */
     void setSections(List<Relay.Section> list, boolean keepFocus) {
         String currentId = current >= 0 && current < sections.size() ? sections.get(current).id : null;
+        // Moving down the rail when a new page comes: stay on the section focus was on, not the
+        // one still showing, so no key press is lost.
+        View f = findFocus();
+        if (f instanceof RailItem && ((RailItem) f).index < sections.size()) currentId = sections.get(((RailItem) f).index).id;
         Story focused = focusedStory();
+        restoreIndex = f instanceof Card ? ((Card) f).index : -1;
         restore(list, currentId, keepFocus && focused != null ? focused.id : null, railFocused(), keepFocus);
     }
 
@@ -195,15 +227,17 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         current = -1;
         if (list.isEmpty()) return;
         show(keep, false);
+        int at = restoreIndex;
+        restoreIndex = -1;
         if (keepFocus && focusedStory != null) {
             for (Card c : cards) {
-                if (c.story.id.equals(focusedStory)) {
-                    c.requestFocus();
-                    return;
-                }
+                if (c.story.id.equals(focusedStory) && c.requestFocus()) return;
             }
+            // The story went (the page changed under it): the card in its place instead.
+            if (at >= 0 && !cards.isEmpty() && cards.get(Math.min(at, cards.size() - 1)).requestFocus()) return;
         }
-        if (railFocused || keepFocus || findFocus() == null) railItems.get(keep).requestFocus();
+        View now = findFocus();
+        if (railFocused || keepFocus || now == null || now == page) railItems.get(keep).requestFocus();
     }
 
     /** Builds the grid for one section. */
@@ -221,22 +255,20 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         TextView title = Ui.text(c, 30, Ui.INK, Ui.display);
         title.setText(s.title);
         grid.addView(title);
-        TextView sub = Ui.text(c, 12.5f, Ui.FAINT, Ui.sansMedium);
-        sub.setText(s.stories.size() + (s.stories.size() == 1 ? " story" : " stories")
-                + ("saved".equals(s.id) ? "  ·  saved in Apple News" : "latest".equals(s.id)
-                ? "  ·  newest in the archive" : "more".equals(s.id) ? "  ·  from the archive on the Mac"
-                : "  ·  from Apple News Today"));
+        sub = Ui.text(c, 12.5f, Ui.FAINT, Ui.sansMedium);
+        sub.setText(subText(s));
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(-2, -2);
         sl.topMargin = Ui.dp(6);
         sl.bottomMargin = Ui.dp(18);
         grid.addView(sub, sl);
 
-        int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(RAIL_DP) - Ui.dp(SIDE_DP) * 2;
         int gap = Ui.dp(GAP_DP);
-        int tile = (width - gap * 2) / 3;
+        int tile = tileWidth();
         int tileH = tile * 9 / 16 + Ui.dp(96);
         List<Story> stories = s.stories;
         int i = 0;
+        lastRow = null;
+        lastRowCount = 3;
         if (stories.size() >= 3) {
             LinearLayout row = row(c);
             int heroH = Ui.dp(300);
@@ -264,7 +296,10 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
                 row.addView(card(Card.TILE, stories.get(j), j, now), lp);
             }
             grid.addView(row, rowParams(gap));
+            lastRow = row;
+            lastRowCount = Math.min(i + 3, stories.size()) - i;
         }
+        built = stories.size();
         RailItem item = railItems.get(index);
         for (Card card : cards) {
             if (isFirstColumn(card)) card.setNextFocusLeftId(item.getId());
@@ -290,7 +325,10 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         card.bind(s, index, now);
         card.setDim(listener.isDimmed(s.id));
         card.setOnFocusChangeListener((v, has) -> {
-            if (has) listener.onFocusStory(card.story);
+            if (!has) return;
+            listener.onFocusStory(card.story, card.index);
+            Relay.Section sec = currentSection();
+            if (sec != null && sec.next != null && Ladder.wantMore(card.index, sec.stories.size())) listener.onNearEnd(sec);
         });
         card.setOnClickListener(new OnClickListener() {
             @Override
@@ -300,6 +338,53 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         });
         cards.add(card);
         return card;
+    }
+
+    /** More stories arrived for a section (its next page): their cards go under the others, if
+     *  it's the one on screen. Focus and scroll stay where they are. */
+    void append(Relay.Section s) {
+        if (current < 0 || current >= sections.size() || sections.get(current) != s || built >= s.stories.size()) return;
+        Context c = getContext();
+        long now = System.currentTimeMillis();
+        int gap = Ui.dp(GAP_DP), tile = tileWidth(), tileH = tile * 9 / 16 + Ui.dp(96);
+        RailItem item = railItems.get(current);
+        for (int j = built; j < s.stories.size(); j++) {
+            if (lastRow == null || lastRowCount >= 3) {
+                lastRow = row(c);
+                lastRowCount = 0;
+                grid.addView(lastRow, rowParams(gap));
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tile, tileH);
+            if (lastRowCount > 0) lp.leftMargin = gap;
+            Card card = card(Card.TILE, s.stories.get(j), j, now);
+            lastRow.addView(card, lp);
+            if (lastRowCount == 0) card.setNextFocusLeftId(item.getId());
+            lastRowCount++;
+        }
+        built = s.stories.size();
+        if (sub != null) sub.setText(subText(s));
+        grid.post(() -> onViewport(page.getScrollY(), page.getScrollY() + page.getHeight()));
+    }
+
+    private static String subText(Relay.Section s) {
+        int n = Math.max(s.total, s.stories.size());
+        String count = n + (n == 1 ? " story" : " stories");
+        if ("saved".equals(s.id)) return count + "  ·  saved in Apple News";
+        if ("latest".equals(s.id)) return count + "  ·  newest in the archive";
+        if ("more".equals(s.id)) return count + "  ·  from the archive on the Mac";
+        if (s.today > 0 && n > s.today) return count + "  ·  " + s.today + " from Apple News Today, then more from the Mac";
+        return count + "  ·  from Apple News Today";
+    }
+
+    /** A tile's width in pixels (three to a row). */
+    int tileWidth() {
+        int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(RAIL_DP) - Ui.dp(SIDE_DP) * 2;
+        return (width - Ui.dp(GAP_DP) * 2) / 3;
+    }
+
+    /** The hero card's size in pixels, so its picture can be decoded before the section shows. */
+    int[] heroSize() {
+        return new int[] {tileWidth() * 2 + Ui.dp(GAP_DP), Ui.dp(300)};
     }
 
     private static LinearLayout row(Context c) {
@@ -398,6 +483,12 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
             if (focused && index != current) {
                 removeCallbacks(switchSection);
                 postDelayed(switchSection, 260);
+            }
+            if (focused) {  // feature: front.warm
+                listener.onRailFocus(index, railAt < 0 ? 0 : Integer.signum(index - railAt));
+                railAt = index;
+                Front.this.removeCallbacks(railRest);
+                Front.this.postDelayed(railRest, RAIL_REST_MS);
             }
         }
 

@@ -1,0 +1,45 @@
+{
+  "about": "Reading the relay's event stream (Sse.java, windows/src/Sse.cs), as the HTML standard's Server-Sent Events describe it. Each stream is fed line by line; an unfinished last line is left out. Both test suites read this file.",
+  "streams": [
+    {
+      "name": "retry, hello and a keep-alive comment",
+      "stream": "retry: 5000\n\nevent: hello\ndata: {\"front_version\":1795470972273}\n\n: keep-alive\n\n",
+      "events": [ { "type": "hello", "data": "{\"front_version\":1795470972273}", "id": null } ]
+    },
+    {
+      "name": "an event with an id",
+      "stream": "event: article.body_captured\nid: 17\ndata: {\"id\":\"A1\"}\n\n",
+      "events": [ { "type": "article.body_captured", "data": "{\"id\":\"A1\"}", "id": "17" } ]
+    },
+    {
+      "name": "no type is a message; data lines join with a newline",
+      "stream": "data: first\ndata: second\n\n",
+      "events": [ { "type": "message", "data": "first\nsecond", "id": null } ]
+    },
+    {
+      "name": "CRLF and CR line endings",
+      "stream": "event: x\u000d\ndata: 1\u000d\u000d",
+      "events": [ { "type": "x", "data": "1", "id": null } ]
+    },
+    {
+      "name": "no space after the colon",
+      "stream": "event:job.updated\ndata:{}\n\n",
+      "events": [ { "type": "job.updated", "data": "{}", "id": null } ]
+    },
+    {
+      "name": "an event without data isn't sent, and its type doesn't carry over",
+      "stream": "event: lonely\n\ndata: z\n\n",
+      "events": [ { "type": "message", "data": "z", "id": null } ]
+    },
+    {
+      "name": "the id carries over to later events",
+      "stream": "id: 5\ndata: a\n\ndata: b\n\n",
+      "events": [ { "type": "message", "data": "a", "id": "5" }, { "type": "message", "data": "b", "id": "5" } ]
+    },
+    {
+      "name": "an unfinished event at the end isn't sent",
+      "stream": "event: front.updated\ndata: {\"version\":2}\n",
+      "events": []
+    }
+  ]
+}

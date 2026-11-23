@@ -38,7 +38,10 @@ Versions at the last full sync: TV 0.2.2, Windows 0.1.0 (2026-11-23).
 | ID | Feature | TV | Windows | Notes |
 |---|---|---|---|---|
 | `front.rail` | Rail of sections on the left; hero, two briefs, rows of picture cards; skimming the rail | ✅ | ✅ | |
-| `front.cache` | Last front page shows at once from cache, then refreshes | ✅ | ✅ | |
+| `front.cache` | Last front page shows at once from cache (read off the UI thread), then is checked with the Mac: nothing comes back when it didn't change (304) | ✅ 0.3.0 | ⏳ 0.3.0 | |
+| `front.live` | The page follows the Mac as it changes (the relay's event stream), once the remote has been still for 8 s; without the stream, a check every 10 minutes | ✅ 0.3.0 | ⏳ 0.3.0 | A change that comes while reading shows when the story closes |
+| `front.deep` | Sections run deep: Apple News Today's stories first, then more from the topic's or publisher's own feed (or what the section carried today); the next page loads as focus nears the end | ✅ 0.3.0 | ⏳ 0.3.0 | Composed by the relay (0.3); a 0.2 relay gives Today's stories only |
+| `front.warm` | Moving along the rail readies the sections beside it (pictures fetched ahead, the next hero decoded); resting on a section has the Mac fetch its first stories | ✅ 0.3.0 | ⏳ 0.3.0 | Windows: hovering a section counts as resting on it |
 | `front.hero_contrast` | Hero's words get dark blocks where the picture under them is too light (WCAG contrast) | ✅ | ✅ | |
 | `dates.labels` | "12m ago", "Yesterday", "Sep 5", reading time | ✅ | ✅ | Cases: `spec/cases/dates.json` |
 
@@ -48,7 +51,9 @@ Versions at the last full sync: TV 0.2.2, Windows 0.1.0 (2026-11-23).
 |---|---|---|---|---|
 | `reader.column` | Single serif column: headline, standfirst, pictures with captions, quotes, subheads | ✅ | ✅ | |
 | `reader.loading_band` | Band while the Mac fetches the body: running bar, "Inking the plates…" | ✅ | ✅ | |
-| `reader.prefetch` | Resting on a card or reading a story has the Mac fetch it or the next one ahead | ✅ | ✅ | |
+| `reader.prefetch` | Resting on a card (0.3 s) has the Mac fetch it and the cards around it; a story that arrived, the next one; nearing a story's end, the next two and the previous. One list per device at the relay, the newest replacing the last | ✅ 0.3.0 | ⏳ 0.3.0 | Cases: `spec/cases/ladder.json`. A 0.2 relay gets one background fetch at a time |
+| `reader.body_cache` | Stories opened or headed for are kept on the device (8 MB, 400 stories, two weeks), so they open at once, even while the Mac sleeps | ✅ 0.3.0 | ⏳ 0.3.0 | TV: app cache folder. Windows: `%LOCALAPPDATA%\Broadsheet\bodies` |
+| `reader.progressive` | A story opens in one trip with its first couple of screens; the rest loads as you read toward it | ✅ 0.3.0 | ⏳ 0.3.0 | Needs relay 0.3 |
 | `reader.resume` | Reopening a story goes back to where you left it | ✅ | ✅ | |
 | `reader.prev_next` | Left/Right: previous/next story | ✅ | ✅ | |
 | `reader.page_keys` | A page at a time | ✅ | ✅ | TV: Fast-forward/Rewind. Windows: Space/Page Down/Page Up |
@@ -73,7 +78,7 @@ Versions at the last full sync: TV 0.2.2, Windows 0.1.0 (2026-11-23).
 | `opt.continue` | Continue reading the last unfinished story | ✅ | ✅ | |
 | `opt.refresh` | Refresh now | ✅ | ✅ | |
 | `opt.auto_refresh` | Refresh by itself every 25 min / hour / off | ✅ | ✅ | |
-| `opt.status_footer` | Footer: is the Mac answering, how much it has to do | ✅ | ✅ | |
+| `opt.status_footer` | Footer: is the Mac answering, how much it has to do | ✅ 0.3.0 | ⏳ 0.3.0 | Stories fetched ahead don't count as waiting |
 | `win.browser` | Open in the browser | — | ✅ | No browser worth handing off to on the TV |
 
 ## Relay and storage
@@ -83,6 +88,7 @@ Versions at the last full sync: TV 0.2.2, Windows 0.1.0 (2026-11-23).
 | `relay.bonjour` | Find the relay by Bonjour (`_newsrelay._tcp`) | ✅ | — | Windows has no Bonjour built in |
 | `relay.subnet` | Find the relay by asking port 8787 on its own subnets | ✅ | ✅ | |
 | `relay.conf` | `relay.conf` with `url=` and `token=` points at the relay by hand | ✅ | ✅ | TV: app's files folder. Windows: `%APPDATA%\Broadsheet` |
+| `relay.events` | Reads the relay's event stream (Server-Sent Events) and reconnects by itself | ✅ 0.3.0 | ⏳ 0.3.0 | Cases: `spec/cases/sse.json` |
 | `library.local` | What you read, how far, likes: `library.json` on the device only | ✅ | ✅ | |
 
 ## Windows only

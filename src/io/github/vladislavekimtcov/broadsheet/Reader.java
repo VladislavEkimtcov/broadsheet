@@ -38,6 +38,12 @@ final class Reader extends FrameLayout {  // feature: reader.column
 
         /** OK on a video in the story. */
         void onPlay(String stream, String title);
+
+        /** Reading toward the end of what's loaded while the rest of the story is still to come. */
+        void onNearLoadedEnd();
+
+        /** Reading toward the end of the story (time to get the next one ready). */
+        void onNearStoryEnd();
     }
 
     /** Body text sizes (sp), from close reading to across the room; {@link #STANDARD} is the default. */
@@ -58,6 +64,8 @@ final class Reader extends FrameLayout {  // feature: reader.column
     private final Ticker ticker;
     /** The video in view that OK plays, or null. */
     private Picture selectedVideo;
+    /** Where the rest of the story starts while only its opening is shown; -1 when it's whole. */
+    private int nextBlock = -1;
 
     Reader(Context c, Images images, Listener listener) {
         super(c);
@@ -147,10 +155,11 @@ final class Reader extends FrameLayout {  // feature: reader.column
     void show(Story s) {
         story = s;
         article = null;
+        nextBlock = -1;
         clear();
         header(s, null, 0);
         if (s.excerpt != null) column.addView(standfirst(s.excerpt));
-        if (s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
+        if (s.image != null) addPicture(s.imageFor(Ui.dp(700)), s.imageWidth, s.imageHeight, null, 0, true);
         loader = new Loader(getContext());
         LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(-1, -2);
         ll.topMargin = Ui.dp(34);
@@ -175,6 +184,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
         }
         if (a.story != null && !a.story.id.equals(story.id)) return;
         article = a;
+        nextBlock = a.nextBlock;
         if (a.pendingJob == null) ticker.stop();
         int y = scroll.getScrollY();
         clear();
@@ -184,7 +194,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
         if (sub != null) column.addView(standfirst(sub));
         String first = a.blocks.isEmpty() ? null : a.blocks.get(0).type;
         boolean leadImage = "image".equals(first) || "video".equals(first);
-        if (!leadImage && s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
+        if (!leadImage && s.image != null) addPicture(s.imageFor(Ui.dp(700)), s.imageWidth, s.imageHeight, null, 0, true);
         for (Article.Block b : a.blocks) block(b);
         if (a.pendingJob != null) {
             loader = new Loader(getContext());
@@ -198,11 +208,31 @@ final class Reader extends FrameLayout {  // feature: reader.column
         } else if ("summary".equals(a.completeness)) {
             note = note(a.jobFailed ? "Apple News didn't hand over the full story, so this is the summary.\n\nRight: next story"
                     : "This is the summary only.\n\nRight: next story");
-        } else {
-            note = note("—\n\nOK: next story");
-            note.setGravity(Gravity.CENTER_HORIZONTAL);
+        } else if (nextBlock < 0) {
+            endNote();
         }
         scroll.scrollTo(0, y);
+        afterLayout();
+    }
+
+    private void endNote() {
+        note = note("—\n\nOK: next story");
+        note.setGravity(Gravity.CENTER_HORIZONTAL);
+    }
+
+    /** Where the rest of the open story starts, or -1 once it's whole. */
+    int nextBlock() {
+        return nextBlock;
+    }
+
+    /** The rest of the story (or its next part), under what's on screen; the page doesn't move. */
+    void appendBlocks(Article rest) {  // feature: reader.progressive
+        if (rest == null || article == null || nextBlock < 0) return;
+        if (rest.story != null && !rest.story.id.equals(story.id)) return;
+        for (Article.Block b : rest.blocks) block(b);
+        article.blocks.addAll(rest.blocks);  // so a new text size or theme sets the whole of it
+        article.nextBlock = nextBlock = rest.nextBlock;
+        if (nextBlock < 0) endNote();
         afterLayout();
     }
 
@@ -368,7 +398,8 @@ final class Reader extends FrameLayout {  // feature: reader.column
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
                 if (selectedVideo != null) play(selectedVideo);
-                else if (atEnd()) listener.onMove(1);
+                else if (atEnd() && nextBlock < 0) listener.onMove(1);
+                else if (atEnd()) listener.onNearLoadedEnd();  // the rest is on its way
                 else scroll.smoothScrollBy(0, Math.round(h * 0.45f));
                 return true;
             case KeyEvent.KEYCODE_DPAD_UP:
@@ -455,6 +486,12 @@ final class Reader extends FrameLayout {  // feature: reader.column
     private void onScroll() {
         updateProgress();
         int top = scroll.getScrollY(), bottom = top + scroll.getHeight();
+        View content = scroll.getChildAt(0);
+        if (article != null && content != null && scroll.getHeight() > 0
+                && Ladder.near(top, scroll.getHeight(), content.getHeight(), 2f)) {
+            if (nextBlock >= 0) listener.onNearLoadedEnd();
+            else if (article.pendingJob == null) listener.onNearStoryEnd();
+        }
         int[] loc = new int[2];
         int[] base = new int[2];
         column.getLocationInWindow(base);
@@ -547,8 +584,11 @@ final class Reader extends FrameLayout {  // feature: reader.column
             started = android.os.SystemClock.uptimeMillis();
             stage = s;
             running = true;
-            setAlpha(1f);
+            // Shown only if the story takes a moment: one kept on the TV arrives before it would.
+            animate().cancel();
+            setAlpha(0f);
             setVisibility(VISIBLE);
+            animate().alpha(1f).setStartDelay(200).setDuration(160).start();
             invalidate();
         }
 
@@ -560,7 +600,8 @@ final class Reader extends FrameLayout {  // feature: reader.column
         void stop() {
             if (!running) return;
             running = false;
-            animate().alpha(0f).setDuration(220).withEndAction(() -> {
+            animate().cancel();
+            animate().alpha(0f).setStartDelay(0).setDuration(220).withEndAction(() -> {
                 if (!running) setVisibility(GONE);
             }).start();
         }

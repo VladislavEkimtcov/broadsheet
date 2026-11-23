@@ -43,11 +43,21 @@ final class Article {
     final String reaction;
     /** The story's topics as {id, name}, for "More on …". */
     final List<String[]> topics = new ArrayList<>();
+    /** Where the rest of the story starts, when only its opening came; -1 when it's whole.
+     *  Moves on as the rest is added ({@link Reader#appendBlocks}). */
+    int nextBlock;
+    /** As the relay sent it, for the copy kept on the TV ({@link Bodies}). */
+    final JSONObject json;
+    /** Words in the whole story, as the relay counted them (an opening has fewer of its own). */
+    private final int wordCount;
 
     Article(JSONObject data) {
         story = Story.from(data);
+        json = data;
         completeness = data.optString("completeness", "summary");
         JSONObject body = data.optJSONObject("body");
+        nextBlock = body == null || body.isNull("next_block") ? -1 : body.optInt("next_block", -1);
+        wordCount = body == null ? 0 : body.optInt("word_count");
         subtitle = body == null ? null : Story.str(body, "subtitle");
         byline = body == null ? Story.str(data, "byline") : first(Story.str(body, "byline"), Story.str(data, "byline"));
         truncated = body != null && body.optBoolean("truncated");
@@ -117,7 +127,7 @@ final class Article {
         return a != null ? a : b;
     }
 
-    /** Words in the text blocks, for the reading time. */
+    /** Words in the story, for the reading time: the relay's count of the whole, or the blocks'. */
     int words() {
         int n = 0;
         for (Block b : blocks) {
@@ -129,6 +139,6 @@ final class Article {
                 in = !ws;
             }
         }
-        return n;
+        return Math.max(n, wordCount);
     }
 }

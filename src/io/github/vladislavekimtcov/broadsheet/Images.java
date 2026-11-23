@@ -20,6 +20,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,6 +58,22 @@ final class Images {
         }
     });
     private final Map<Target, Job> jobs = new HashMap<>();
+    /** Pictures fetched ahead of time, one at a time, behind the ones on screen. */
+    private final ExecutorService warmer = Executors.newSingleThreadExecutor(new ThreadFactory() {
+        @Override
+        public Thread newThread(final Runnable r) {
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    Process.setThreadPriority(Process.THREAD_PRIORITY_LOWEST);
+                    r.run();
+                }
+            }, "images-ahead");
+            t.setDaemon(true);
+            return t;
+        }
+    });
+    private volatile int warmBatch;
 
     Images(File dir) {
         this.dir = dir;
@@ -89,6 +106,48 @@ final class Images {
         j = new Job(t, key, url, w, h, quality);
         jobs.put(t, j);
         j.future = pool.submit(j);
+    }
+
+    /** Downloads pictures to the disk cache only (no decoding), in order; a newer list replaces
+     *  what's left of this one. For the sections beside the one on screen. */
+    void warm(final List<String> urls) {  // feature: front.warm
+        final int batch = ++warmBatch;
+        warmer.execute(new Runnable() {
+            @Override
+            public void run() {
+                for (String url : urls) {
+                    if (batch != warmBatch) return;
+                    if (url == null) continue;
+                    File f = new File(dir, hash(url));
+                    if (f.isFile()) continue;
+                    try {
+                        download(url, f);
+                    } catch (IOException | RuntimeException e) {
+                        // only ahead of time; the card tries again when it shows
+                    }
+                }
+            }
+        });
+    }
+
+    /** Stops fetching ahead (the app went to the background). */
+    void cancelWarm() {
+        warmBatch++;
+    }
+
+    /** Decodes a picture into memory before its view exists (the next section's hero), at the
+     *  size that view will ask for. */
+    void preload(String url, int w, int h, boolean quality) {
+        if (url == null) return;
+        String key = url + "#" + w + "x" + h + (quality ? "q" : "");
+        if (mem.get(key) != null) return;
+        Target nobody = new Target() {
+            @Override
+            public void onImage(Bitmap b, boolean fresh) {}
+        };
+        Job j = new Job(nobody, key, url, w, h, quality);
+        jobs.put(nobody, j);
+        j.future = warmer.submit(j);
     }
 
     void cancel(Target t) {
@@ -174,7 +233,7 @@ final class Images {
         c.setConnectTimeout(10000);
         c.setReadTimeout(20000);
         c.setRequestProperty("User-Agent", Net.userAgent);
-        File tmp = new File(f.getPath() + ".part");
+        File tmp = new File(f.getPath() + "." + Thread.currentThread().getId() + ".part");
         try {
             if (c.getResponseCode() != 200) return false;
             String type = c.getContentType();

@@ -114,7 +114,7 @@ Dates and sunrise/sunset have tests that run on the computer. They read the case
 
 ```sh
 P=src/io/github/vladislavekimtcov/broadsheet
-javac -d build/test $P/Sun.java $P/Dates.java tests/CasesTest.java
+javac -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java tests/CasesTest.java
 java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
 python3 tools/parity.py          # PARITY.md against both apps' code
 ```
@@ -123,21 +123,30 @@ python3 tools/parity.py          # PARITY.md against both apps' code
 
 | | |
 |---|---|
-| front page | `GET /v1/sections?per_section=30`, `GET /v1/articles?limit=45` (Latest), `GET /v1/saved` |
-| a story | `GET /v1/articles/{id}`: the body, or the job fetching it (queued or running) |
-| still fetching | `GET /v1/jobs/{id}?wait=12` (up to four times), then the article again |
-| ahead of time | `POST /v1/articles/{id}/fetch?priority=background`: the card resting in focus, the next story |
+| front page | `GET /v1/front`: every section (its first 12 stories), Latest and Saved in one call, with `If-None-Match`; `304` when nothing changed |
+| more of a section | the section's `links.next` (`GET /v1/sections/{id}/articles?cursor=…`), 15 at a time, as focus nears the end |
+| live | `GET /v1/events`: `hello` on connecting, `front.updated` (reload once the remote is still), `article.body_captured`, `job.updated` |
+| a story | `GET /v1/articles/{id}?wait=14&max_chars=2400`: one trip, the Mac fetching it if needed; the first couple of screens |
+| the rest of it | `GET /v1/articles/{id}?fetch=never&from_block=N`, when the reader is within two screens of the loaded end |
+| still fetching | `GET /v1/jobs/{id}?wait=12` (rarely: only when 14 s weren't enough), then the article again |
+| ahead of time | `PUT /v1/interest/{client}`: the stories around the card in focus, a section's first three when resting on it on the rail, the next stories while reading (the relay has Apple News fetch them; the newest list replaces the last); `DELETE` when the app goes to the background |
+| openings ahead | `GET /v1/articles/{id}?fetch=never&max_chars=2400` for the ones the relay already has, kept on the TV |
 | save, unsave | `PUT` / `DELETE /v1/saved/{id}?wait=25` |
 | like, dislike, take back | `PUT /v1/articles/{id}/reaction?reaction=like` / `DELETE` the same |
 | more like this | `GET /v1/channels/{id}/articles`, `/v1/topics/{id}/articles`, `/v1/articles/{id}/related`; then `POST /v1/channels/{id}/refresh` |
-| freshness | `POST /v1/today/refresh?pages=4` every 25 minutes (or hourly, or never), then a quiet reload |
+| freshness | `POST /v1/today/refresh?pages=4` every 25 minutes (or hourly, or never); the page follows on `front.updated` |
 | On the Mac | `GET /v1/handoff` |
 | the panel's footer | `GET /v1/status` |
 
+A relay older than 0.3 gets the 0.2 calls: `/v1/sections`, `/v1/articles`, `/v1/saved`, and
+`POST /v1/articles/{id}/fetch?priority=background` for one story at a time.
+
 Video plays from the URL in the story's `video` block, straight from the publisher's CDN.
 
-The last front page is kept on disk, so the app opens instantly and still works for a while if
-the Mac sleeps.
+On the TV, kept in the app's cache folder: the last front page (so the app opens at once and
+still works for a while if the Mac sleeps), stories opened or headed for (`bodies/`, 8 MB, 400
+stories, two weeks, the least recently opened first out), and pictures (`img/`, 150 MB). Cards
+fetch the picture size they show (750 px wide for a tile, not 2048).
 
 ## Requirements
 

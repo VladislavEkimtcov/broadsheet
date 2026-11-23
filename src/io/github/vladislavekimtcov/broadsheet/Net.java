@@ -37,6 +37,15 @@ final class Net {
      */
     static Response request(String method, String url, String etag, String token, int readTimeoutMs, int maxBytes)
             throws IOException {
+        return request(method, url, etag, token, readTimeoutMs, maxBytes, null);
+    }
+
+    /**
+     * As above, with a JSON {@code body} for POST and PUT ("{}" when null). The connection is kept
+     * for the next request once the answer has been read in full (the relay keeps it open too).
+     */
+    static Response request(String method, String url, String etag, String token, int readTimeoutMs, int maxBytes,
+                            String body) throws IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setConnectTimeout(6000);
         c.setReadTimeout(readTimeoutMs);
@@ -46,28 +55,43 @@ final class Net {
         c.setRequestProperty("Accept-Encoding", "gzip");
         if (etag != null && !etag.isEmpty()) c.setRequestProperty("If-None-Match", etag);
         if (token != null && !token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
-        if ("POST".equals(method) || "PUT".equals(method)) {
-            c.setDoOutput(true);
-            c.setRequestProperty("Content-Type", "application/json");
-            try (OutputStream out = c.getOutputStream()) {
-                out.write("{}".getBytes(StandardCharsets.UTF_8));
-            }
-        }
+        boolean done = false;
         try {
+            if ("POST".equals(method) || "PUT".equals(method)) {
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                try (OutputStream out = c.getOutputStream()) {
+                    out.write((body != null ? body : "{}").getBytes(StandardCharsets.UTF_8));
+                }
+            }
             Response r = new Response();
             r.code = c.getResponseCode();
             r.etag = c.getHeaderField("ETag");
-            InputStream in = r.code >= 400 ? c.getErrorStream() : (r.code == 304 ? null : c.getInputStream());
+            InputStream in = r.code >= 400 ? c.getErrorStream() : (r.code == 304 || r.code == 204 ? null : c.getInputStream());
             if (in != null) {
                 if ("gzip".equalsIgnoreCase(c.getHeaderField("Content-Encoding"))) in = new GZIPInputStream(in);
                 try (InputStream s = in) {
                     r.body = read(s, maxBytes);
                 }
             }
+            done = true;
             return r;
         } finally {
-            c.disconnect();
+            if (!done) c.disconnect();  // a broken exchange: don't reuse the socket
         }
+    }
+
+    /** An open event stream ({@code text/event-stream}); the caller reads it and disconnects. */
+    static HttpURLConnection stream(String url, String token, int readTimeoutMs) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(6000);
+        c.setReadTimeout(readTimeoutMs);
+        c.setRequestProperty("User-Agent", userAgent);
+        c.setRequestProperty("Accept", "text/event-stream");
+        c.setRequestProperty("Accept-Encoding", "identity");
+        c.setUseCaches(false);
+        if (token != null && !token.isEmpty()) c.setRequestProperty("Authorization", "Bearer " + token);
+        return c;
     }
 
     static byte[] read(InputStream in, int maxBytes) throws IOException {

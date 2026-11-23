@@ -22,7 +22,7 @@ jobs:
       - name: Shared cases (spec/cases) on the TV app's code
         run: |
           P=src/io/github/vladislavekimtcov/broadsheet
-          javac -d build/test $P/Sun.java $P/Dates.java tests/CasesTest.java
+          javac -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java tests/CasesTest.java
           java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
   windows:
     runs-on: windows-latest

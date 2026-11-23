@@ -29,7 +29,7 @@ Keep them at feature parity through [PARITY.md](PARITY.md).
 ```sh
 # TV app (macOS/Linux): shared cases on the JVM, then the APK
 P=src/io/github/vladislavekimtcov/broadsheet
-javac -d build/test $P/Sun.java $P/Dates.java tests/CasesTest.java && java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
+javac -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java tests/CasesTest.java && java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
 ./build.sh                       # bump version.env for every APK that goes on a device
 ```
 

@@ -12,6 +12,8 @@ import java.util.List;
 final class Story {
     final String id, title, excerpt, byline, channel, channelId, channelLogo, image;
     final int imageWidth, imageHeight;
+    private final String[] thumbUrls;
+    private final int[] thumbWidths;
     final long published;
     final boolean paid;
     /** full | preview | summary: how much of the story the relay has. */
@@ -31,7 +33,23 @@ final class Story {
         channel = ch == null ? null : str(ch, "name");
         channelId = ch == null ? null : str(ch, "id");
         channelLogo = ch == null ? null : str(ch, "logo");
+        // The sizes Apple News has of the picture (300, 750, 1600, 2048 wide, as a rule).
+        JSONArray thumbs = o.optJSONArray("thumbnails");
+        List<String> urls = new ArrayList<>();
+        List<Integer> widths = new ArrayList<>();
+        JSONObject largest = null;
+        for (int i = 0; thumbs != null && i < thumbs.length(); i++) {
+            JSONObject t = thumbs.optJSONObject(i);
+            if (t == null || str(t, "url") == null) continue;
+            urls.add(t.optString("url"));
+            widths.add(t.optInt("width"));
+            if (largest == null || t.optInt("width") > largest.optInt("width")) largest = t;
+        }
+        thumbUrls = urls.toArray(new String[0]);
+        thumbWidths = new int[widths.size()];
+        for (int i = 0; i < thumbWidths.length; i++) thumbWidths[i] = widths.get(i);
         JSONObject img = o.optJSONObject("image");
+        if (img == null) img = largest;  // the front page leaves "image" out: it's the largest thumbnail
         image = img == null ? null : str(img, "url");
         imageWidth = img == null ? 0 : img.optInt("width");
         imageHeight = img == null ? 0 : img.optInt("height");
@@ -43,6 +61,20 @@ final class Story {
         background = color(colors, "background", 0);  // 0: none, the page's own surface
         accentRaw = color(colors, "accent", 0xFF8A8378);
         json = o;
+    }
+
+    /** The smallest picture at least {@code widthPx} wide (a tile needs the 750 one, not 2048), else the largest. */
+    String imageFor(int widthPx) {
+        String best = null;
+        int bestWidth = Integer.MAX_VALUE;
+        for (int i = 0; i < thumbUrls.length; i++) {
+            int w = thumbWidths[i];
+            if (w >= widthPx && w < bestWidth) {
+                best = thumbUrls[i];
+                bestWidth = w;
+            }
+        }
+        return best != null ? best : image;
     }
 
     /** The publisher's colour, made readable on the current page. */

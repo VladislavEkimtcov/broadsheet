@@ -14,7 +14,8 @@ import java.util.TimeZone;
  * The shared behaviour cases in spec/cases/*.json, the same files windows/tests/Tests.cs reads.
  * Run from the repo root:
  * {@code javac -d build/test src/io/github/vladislavekimtcov/broadsheet/Sun.java
- * src/io/github/vladislavekimtcov/broadsheet/Dates.java tests/CasesTest.java
+ * src/io/github/vladislavekimtcov/broadsheet/Dates.java src/io/github/vladislavekimtcov/broadsheet/Ladder.java
+ * src/io/github/vladislavekimtcov/broadsheet/Sse.java tests/CasesTest.java
  * && java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest}
  */
 public final class CasesTest {
@@ -29,8 +30,51 @@ public final class CasesTest {
         String dir = args.length > 0 ? args[0] : "spec/cases";
         sun(load(dir + "/sun.json"));
         dates(load(dir + "/dates.json"));
+        ladder(load(dir + "/ladder.json"));
+        sse(load(dir + "/sse.json"));
         System.out.println(failures == 0 ? "all passed" : failures + " failed");
         if (failures > 0) System.exit(1);
+    }
+
+    private static void ladder(Map<String, Object> l) {
+        for (Map<String, Object> c : list(l, "around"))
+            check(same(Ladder.around(num(c, "index"), num(c, "count")), c), "ladder: around, " + str(c, "name"));
+        for (Map<String, Object> c : list(l, "want_more"))
+            check(Ladder.wantMore(num(c, "index"), num(c, "loaded")) == (Boolean) c.get("expect"), "ladder: want more, " + str(c, "name"));
+        for (Map<String, Object> c : list(l, "rail_neighbours"))
+            check(same(Ladder.railNeighbours(num(c, "index"), num(c, "count"), num(c, "direction")), c), "ladder: rail, " + str(c, "name"));
+        for (Map<String, Object> c : list(l, "reading"))
+            check(same(Ladder.reading(num(c, "index"), num(c, "count")), c), "ladder: reading, " + str(c, "name"));
+        for (Map<String, Object> c : list(l, "near"))
+            check(Ladder.near(num(c, "scroll"), num(c, "viewport"), num(c, "content"), num(c, "screens"))
+                    == (Boolean) c.get("expect"), "ladder: near, " + str(c, "name"));
+    }
+
+    private static void sse(Map<String, Object> s) {
+        for (Map<String, Object> c : list(s, "streams")) {
+            List<Sse.Event> got = Sse.parse(str(c, "stream"));
+            List<Map<String, Object>> want = list(c, "events");
+            boolean ok = got.size() == want.size();
+            for (int i = 0; ok && i < got.size(); i++) {
+                Sse.Event g = got.get(i);
+                Map<String, Object> w = want.get(i);
+                ok = g.type.equals(str(w, "type")) && g.data.equals(str(w, "data"))
+                        && (g.id == null ? w.get("id") == null : g.id.equals(str(w, "id")));
+            }
+            check(ok, "sse: " + str(c, "name"));
+        }
+    }
+
+    private static int num(Map<String, Object> o, String key) {
+        return ((Number) o.get(key)).intValue();
+    }
+
+    private static boolean same(int[] got, Map<String, Object> c) {
+        @SuppressWarnings("unchecked")
+        List<Object> want = (List<Object>) c.get("expect");
+        if (got.length != want.size()) return false;
+        for (int i = 0; i < got.length; i++) if (got[i] != ((Number) want.get(i)).intValue()) return false;
+        return true;
     }
 
     private static void sun(Map<String, Object> s) {

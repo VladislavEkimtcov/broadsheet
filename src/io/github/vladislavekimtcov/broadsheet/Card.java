@@ -81,7 +81,7 @@ final class Card extends View implements Images.Target {
         meta = s.dateline(now);
         setContentDescription(s.title);
         buildText();
-        if (near) images.load(this, s.image, imageWidth(), imageHeight(), false);
+        if (near) images.load(this, s.imageFor(imageWidth()), imageWidth(), imageHeight(), false);
         invalidate();
     }
 
@@ -91,7 +91,7 @@ final class Card extends View implements Images.Target {
         near = value;
         if (style == BRIEF) return;
         if (near) {
-            images.load(this, story.image, imageWidth(), imageHeight(), false);
+            images.load(this, story.imageFor(imageWidth()), imageWidth(), imageHeight(), false);
         } else {
             images.cancel(this);
             if (bitmap != null) {
@@ -139,7 +139,7 @@ final class Card extends View implements Images.Target {
             scrim.setShader(new LinearGradient(0, h * 0.25f, 0, h, 0x00000000, 0xF0000000, Shader.TileMode.CLAMP));
         }
         buildText();
-        if (near && story != null && style != BRIEF) images.load(this, story.image, imageWidth(), imageHeight(), false);
+        if (near && story != null && style != BRIEF) images.load(this, story.imageFor(imageWidth()), imageWidth(), imageHeight(), false);
     }
 
     private void buildText() {

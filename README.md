@@ -10,6 +10,8 @@ Apple News has no Android app and no reader API, so Broadsheet gets the news fro
 that runs on your Mac and turns the News app into a local JSON API. The TV finds the relay on
 your network by itself.
 
+![Broadsheet's front page on a TV: a rail of sections on the left, a hero story, two briefs and rows of picture cards](docs/front-page.jpg)
+
 - **Front page:** a rail of sections on the left; a hero story, two briefs and rows of picture
   cards. Moving along the rail skims sections; cached pages open instantly.
 - **Reader:** a single column of serif type (Newsreader, SIL OFL), pictures with captions, quotes
@@ -21,7 +23,10 @@ your network by itself.
 - **Apple News+:** whole stories when the Mac's account has Apple News+; otherwise the opening,
   clearly marked.
 - **Light on a small TV box:** one view per card, pictures decoded at the size shown and dropped
-  when far off screen, nothing animating at rest.
+  when far off screen, nothing animating at rest (0 frames and about 1 ms of CPU a second while
+  idle, measured on the TV).
+
+![The reader: dateline, headline, byline, standfirst and the lead picture in a single serif column](docs/reader.jpg)
 
 ## Setup
 
@@ -31,10 +36,12 @@ your network by itself.
    python3 -m apple_news_relay serve --host 0.0.0.0 --allow 127.0.0.1,192.168.1.0/24
    ```
 2. Install Broadsheet on the TV (see [Build](#build)), open **News**. It finds the relay with
-   Bonjour (`_newsrelay._tcp`).
+   Bonjour (`_newsrelay._tcp`), and where Bonjour doesn't get through (common between Wi-Fi and
+   wired networks, or with a VPN app on the TV) by asking port 8787 on its own subnet. Until it
+   finds one it tries again every 30 seconds; OK tries at once.
 
-If your network blocks Bonjour, point it at the relay by hand: put a `relay.conf` in the app's
-files folder
+If the relay runs on another port or subnet, point the app at it by hand: put a `relay.conf` in
+the app's files folder
 
 ```
 url=http://192.168.1.20:8787

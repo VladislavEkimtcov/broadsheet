@@ -70,7 +70,8 @@ final class Article {
                     break;
                 case "video":
                     String poster = Story.str(b, "poster");
-                    if (poster != null) blocks.add(new Block("video", null, poster, "Video", 0, 0, 0, 0));
+                    // The poster carries a "Video" badge; a caption only if the story gave one.
+                    if (poster != null) blocks.add(new Block("video", null, poster, Story.str(b, "caption"), 0, 0, 0, 0));
                     break;
                 case "divider":
                     if (!blocks.isEmpty()) blocks.add(new Block("divider", null, null, null, 0, 0, 0, 0));

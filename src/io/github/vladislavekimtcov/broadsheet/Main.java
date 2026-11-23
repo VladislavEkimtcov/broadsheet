@@ -22,6 +22,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     private static final long REFRESH_AFTER_MS = 25 * 60 * 1000L;
     /** Seconds the relay may spend getting a story's body from Apple News before answering. */
     private static final int FETCH_WAIT = 14;
+    /** With nothing on screen, look for the relay again this often. */
+    private static final long RETRY_MS = 30 * 1000L;
 
     private Relay relay;
     private Images images;
@@ -32,6 +34,12 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     private int openIndex;
     private long loadedAt;
     private boolean loading, refreshing;
+    private final Runnable retry = new Runnable() {
+        @Override
+        public void run() {
+            load();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -75,13 +83,25 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     @Override
     protected void onResume() {
         super.onResume();
-        if (loadedAt > 0 && System.currentTimeMillis() - loadedAt > 10 * 60 * 1000L) load();
+        if (!front.hasContent() || System.currentTimeMillis() - loadedAt > 10 * 60 * 1000L) load();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
+        front.removeCallbacks(retry);
         images.trim();
+    }
+
+    /** Says what went wrong; with nothing to show, tries again by itself (OK tries at once). */
+    private void fail(String text) {
+        if (front.hasContent()) {
+            front.showMessage(text);
+            return;
+        }
+        front.showMessage(text + "\n\nTrying again every 30 seconds. Press OK to try now.");
+        front.removeCallbacks(retry);
+        front.postDelayed(retry, RETRY_MS);
     }
 
     private static String time(long ms) {
@@ -91,6 +111,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     /** Loads the front page from the relay, finding the relay first if needed. */
     private void load() {
         if (loading) return;
+        front.removeCallbacks(retry);
         if (!relay.known()) {
             loading = true;
             relay.discover(new Relay.Done<String>() {
@@ -98,7 +119,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 public void done(String url, String error) {
                     loading = false;
                     if (url == null) {
-                        front.showMessage(error + "\n\nStart Apple News Relay on the Mac (apple-news-relay serve --host 0.0.0.0), "
+                        fail(error + "\n\nStart Apple News Relay on the Mac (apple-news-relay serve --host 0.0.0.0), "
                                 + "or put url=http://<mac>:8787 in relay.conf in this app's files folder.");
                         return;
                     }
@@ -119,16 +140,16 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                             @Override
                             public void done(String url, String e2) {
                                 if (url != null) load();
-                                else front.showMessage(error);
+                                else fail(error);
                             }
                         });
                         return;
                     }
-                    front.showMessage(error);
+                    fail(error);
                     return;
                 }
                 if (sections.isEmpty()) {
-                    front.showMessage("The relay has no stories yet. Open Apple News on the Mac once.");
+                    fail("The relay has no stories yet. Open Apple News on the Mac once.");
                     return;
                 }
                 boolean first = !front.hasContent();
@@ -226,6 +247,13 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         if (reader.getVisibility() == View.VISIBLE && reader.onKey(e)) return true;
+        if (!front.hasContent() && (e.getKeyCode() == KeyEvent.KEYCODE_DPAD_CENTER || e.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
+            if (e.getAction() == KeyEvent.ACTION_UP && !loading) {
+                front.showMessage("Looking for Apple News Relay on your network…");
+                load();
+            }
+            return true;
+        }
         return super.dispatchKeyEvent(e);
     }
 }

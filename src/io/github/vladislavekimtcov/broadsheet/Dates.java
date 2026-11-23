@@ -1,5 +1,6 @@
 package io.github.vladislavekimtcov.broadsheet;
 
+import java.util.Calendar;
 import java.util.Locale;
 
 /**
@@ -113,7 +114,7 @@ final class Dates {
         return era * 146097 + doe - 719468;
     }
 
-    /** "Just now", "12m ago", "3h ago", "Yesterday", "2d ago". */
+    /** "Just now", "12m ago", "3h ago", "Yesterday", "2d ago"; from a week on "Sep 5" or "Sep 5, 2025". */
     static String ago(long when, long now) {
         if (when <= 0) return "";
         long m = (now - when) / 60000;
@@ -122,7 +123,14 @@ final class Dates {
         long h = m / 60;
         if (h < 24) return h + "h ago";
         long d = h / 24;
-        return d == 1 ? "Yesterday" : d + "d ago";
+        if (d < 7) return d == 1 ? "Yesterday" : d + "d ago";
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(now);
+        int thisYear = c.get(Calendar.YEAR);
+        c.setTimeInMillis(when);
+        String month = MONTHS[c.get(Calendar.MONTH)];
+        String day = Character.toUpperCase(month.charAt(0)) + month.substring(1) + " " + c.get(Calendar.DAY_OF_MONTH);
+        return c.get(Calendar.YEAR) == thisYear ? day : day + ", " + c.get(Calendar.YEAR);
     }
 
     /** Reading time for this many words at ~230 words a minute: "4 min read". */

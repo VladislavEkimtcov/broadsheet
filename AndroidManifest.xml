@@ -9,6 +9,8 @@
          found with Bonjour); pictures from Apple's image CDN over HTTPS. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Bonjour on Wi-Fi chips that filter multicast unless asked -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:label="@string/app_name"

@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.net.nsd.NsdManager;
 import android.net.nsd.NsdServiceInfo;
+import android.net.wifi.WifiManager;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -18,9 +19,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -32,8 +39,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * that turns the Apple News app into a JSON API. Everything the app shows comes from it.
  *
  * <p>Where the relay is: {@code relay.conf} in the app's external files folder ({@code url=} and
- * optional {@code token=}), else the last address that worked, else Bonjour: the relay advertises
- * {@code _newsrelay._tcp} on the local network.
+ * optional {@code token=}), else the last address that worked, else Bonjour (the relay advertises
+ * {@code _newsrelay._tcp}), else a look for port 8787 on the TV's own subnet.
  */
 final class Relay {
     interface Done<T> {
@@ -53,6 +60,8 @@ final class Relay {
     }
 
     static final String SERVICE = "_newsrelay._tcp.";
+    /** The relay's default port, for the subnet scan. */
+    static final int PORT = 8787;
     private static final int MAX_JSON = 8 * 1024 * 1024;
 
     private final Context context;
@@ -111,18 +120,21 @@ final class Relay {
         }
     }
 
-    /** Finds the relay with Bonjour (8 s at most) and remembers it. */
+    /**
+     * Finds the relay and remembers it: Bonjour first, and after a moment a look at port 8787 on
+     * this TV's own subnet too, for networks that don't pass Bonjour between Wi-Fi and the Mac.
+     * Whichever answers first wins; gives up after 10 s.
+     */
     void discover(final Done<String> done) {
-        final NsdManager nsd = (NsdManager) context.getSystemService(Context.NSD_SERVICE);
-        if (nsd == null) {
-            done.done(null, "This TV can't search the network for the relay.");
-            return;
-        }
         final AtomicBoolean finished = new AtomicBoolean();
+        final NsdManager nsd = (NsdManager) context.getSystemService(Context.NSD_SERVICE);
         final NsdManager.DiscoveryListener[] holder = new NsdManager.DiscoveryListener[1];
+        final WifiManager.MulticastLock lock = multicastLock();
         final Runnable stop = new Runnable() {
             @Override
             public void run() {
+                if (lock != null && lock.isHeld()) lock.release();
+                if (nsd == null || holder[0] == null) return;
                 try {
                     nsd.stopServiceDiscovery(holder[0]);
                 } catch (RuntimeException e) {
@@ -130,58 +142,70 @@ final class Relay {
                 }
             }
         };
-        holder[0] = new NsdManager.DiscoveryListener() {
+        final Found found = new Found() {
             @Override
-            public void onServiceFound(NsdServiceInfo info) {
-                if (finished.get()) return;
-                nsd.resolveService(info, new NsdManager.ResolveListener() {
-                    @Override
-                    public void onResolveFailed(NsdServiceInfo i, int code) {}
-
-                    @Override
-                    public void onServiceResolved(NsdServiceInfo i) {
-                        InetAddress host = i.getHost();
-                        if (host == null || !finished.compareAndSet(false, true)) return;
-                        String h = host.getHostAddress();
-                        if (h.contains(":")) h = "[" + h + "]";
-                        final String url = "http://" + h + ":" + i.getPort();
-                        base = url;
-                        origin = "found on the network";
-                        prefs.edit().putString("url", url).apply();
-                        ui.post(stop);
-                        ui.post(new Runnable() {
-                            @Override
-                            public void run() {
-                                done.done(url, null);
-                            }
-                        });
-                    }
-                });
+            public void at(String url, String how) {
+                if (!finished.compareAndSet(false, true)) return;
+                base = url;
+                origin = how;
+                prefs.edit().putString("url", url).apply();
+                ui.post(stop);
+                post(done, url, null);
             }
-
-            @Override
-            public void onServiceLost(NsdServiceInfo info) {}
-
-            @Override
-            public void onDiscoveryStarted(String type) {}
-
-            @Override
-            public void onDiscoveryStopped(String type) {}
-
-            @Override
-            public void onStartDiscoveryFailed(String type, int code) {
-                if (finished.compareAndSet(false, true)) post(done, null, "Couldn't search the network for the relay.");
-            }
-
-            @Override
-            public void onStopDiscoveryFailed(String type, int code) {}
         };
-        try {
-            nsd.discoverServices(SERVICE, NsdManager.PROTOCOL_DNS_SD, holder[0]);
-        } catch (RuntimeException e) {
-            done.done(null, "Couldn't search the network for the relay.");
-            return;
+        if (nsd != null) {
+            holder[0] = new NsdManager.DiscoveryListener() {
+                @Override
+                public void onServiceFound(NsdServiceInfo info) {
+                    if (finished.get()) return;
+                    nsd.resolveService(info, new NsdManager.ResolveListener() {
+                        @Override
+                        public void onResolveFailed(NsdServiceInfo i, int code) {}
+
+                        @Override
+                        public void onServiceResolved(NsdServiceInfo i) {
+                            InetAddress host = i.getHost();
+                            if (host == null) return;
+                            String h = host.getHostAddress();
+                            if (h.contains(":")) h = "[" + h + "]";
+                            found.at("http://" + h + ":" + i.getPort(), "found with Bonjour");
+                        }
+                    });
+                }
+
+                @Override
+                public void onServiceLost(NsdServiceInfo info) {}
+
+                @Override
+                public void onDiscoveryStarted(String type) {}
+
+                @Override
+                public void onDiscoveryStopped(String type) {}
+
+                @Override
+                public void onStartDiscoveryFailed(String type, int code) {}
+
+                @Override
+                public void onStopDiscoveryFailed(String type, int code) {}
+            };
+            try {
+                nsd.discoverServices(SERVICE, NsdManager.PROTOCOL_DNS_SD, holder[0]);
+            } catch (RuntimeException e) {
+                holder[0] = null;
+            }
         }
+        ui.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (finished.get()) return;
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        scan(finished, found);
+                    }
+                }, "scan").start();
+            }
+        }, nsd == null ? 0 : 1500);
         ui.postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -190,7 +214,91 @@ final class Relay {
                     done.done(null, "No Apple News Relay found on this network.");
                 }
             }
-        }, 8000);
+        }, 10000);
+    }
+
+    private interface Found {
+        /** Any thread; the first call wins. */
+        void at(String url, String how);
+    }
+
+    /** Some Wi-Fi chips drop multicast (so Bonjour) unless an app asks for it. */
+    private WifiManager.MulticastLock multicastLock() {
+        try {
+            WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wifi == null) return null;
+            WifiManager.MulticastLock lock = wifi.createMulticastLock("broadsheet-discovery");
+            lock.setReferenceCounted(false);
+            lock.acquire();
+            return lock;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Knocks on port 8787 of every address in this TV's subnet (a /24 at most), 32 at a time, and
+     * asks whatever answers whether it is the relay. Takes a few seconds; stops once found.
+     */
+    private void scan(final AtomicBoolean finished, final Found found) {
+        List<InetAddress> hosts = neighbours();
+        if (hosts.isEmpty()) return;
+        ExecutorService pool = Executors.newFixedThreadPool(32);
+        for (final InetAddress a : hosts) {
+            pool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    if (finished.get()) return;
+                    try (Socket s = new Socket()) {
+                        s.connect(new InetSocketAddress(a, PORT), 400);
+                    } catch (IOException e) {
+                        return;
+                    }
+                    String url = "http://" + a.getHostAddress() + ":" + PORT;
+                    try {
+                        // Even a 401 or 403 from the relay names it, so a token doesn't hide it.
+                        if (Net.request("GET", url + "/v1", null, token, 3000, 64 * 1024).text().contains("apple-news-relay")) {
+                            found.at(url, "found on the network");
+                        }
+                    } catch (IOException e) {
+                        // something else on that port
+                    }
+                }
+            });
+        }
+        pool.shutdown();
+    }
+
+    /** This TV's neighbours on its Wi-Fi or Ethernet subnet (VPN interfaces skipped). */
+    static List<InetAddress> neighbours() {
+        List<InetAddress> out = new ArrayList<>();
+        try {
+            Enumeration<NetworkInterface> all = NetworkInterface.getNetworkInterfaces();
+            while (all != null && all.hasMoreElements()) {
+                NetworkInterface ni = all.nextElement();
+                String name = ni.getName();
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual() || ni.isPointToPoint()
+                        || name.startsWith("tun") || name.startsWith("ppp") || name.startsWith("rmnet")) continue;
+                for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    InetAddress self = ia.getAddress();
+                    if (!(self instanceof Inet4Address) || !self.isSiteLocalAddress()) continue;
+                    int prefix = Math.max(ia.getNetworkPrefixLength(), 24);
+                    if (prefix > 30) continue;
+                    byte[] b = self.getAddress();
+                    int me = (b[0] & 255) << 24 | (b[1] & 255) << 16 | (b[2] & 255) << 8 | (b[3] & 255);
+                    int size = 1 << (32 - prefix);
+                    int net = me & -size;
+                    for (int i = 1; i < size - 1; i++) {
+                        int h = net | i;
+                        if (h == me) continue;
+                        out.add(InetAddress.getByAddress(new byte[] {(byte) (h >>> 24), (byte) (h >>> 16), (byte) (h >>> 8), (byte) h}));
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // no interfaces to look at
+        }
+        return out;
     }
 
     // ----------------------------------------------------------------- calls

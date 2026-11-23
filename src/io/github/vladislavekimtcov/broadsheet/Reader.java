@@ -13,6 +13,7 @@ import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -87,12 +88,7 @@ final class Reader extends FrameLayout {
         if (s.image != null) addPicture(s.image, s.imageWidth, s.imageHeight, null, 0, true);
         note = note("Getting the story from Apple News on the Mac…");
         scroll.scrollTo(0, 0);
-        post(new Runnable() {
-            @Override
-            public void run() {
-                onScroll();
-            }
-        });
+        afterLayout();
     }
 
     /** The body arrived (or didn't: {@code error}). */
@@ -105,7 +101,7 @@ final class Reader extends FrameLayout {
         int y = scroll.getScrollY();
         clear();
         Story s = a.story != null ? a.story : story;
-        header(s, a.byline, a.words());
+        header(s, a.byline, a.truncated ? 0 : a.words());  // a preview's length isn't the story's
         String sub = a.subtitle != null ? a.subtitle : s.excerpt;
         if (sub != null) column.addView(standfirst(sub));
         boolean leadImage = !a.blocks.isEmpty() && "image".equals(a.blocks.get(0).type);
@@ -124,12 +120,7 @@ final class Reader extends FrameLayout {
             note.setGravity(Gravity.CENTER_HORIZONTAL);
         }
         scroll.scrollTo(0, y);
-        post(new Runnable() {
-            @Override
-            public void run() {
-                onScroll();
-            }
-        });
+        afterLayout();
     }
 
     private void clear() {
@@ -349,6 +340,19 @@ final class Reader extends FrameLayout {
         progress.setScaleX(range <= 0 ? 1f : Math.min(1f, scroll.getScrollY() / (float) range));
     }
 
+    /** Works out what's near the screen once the new page has been laid out. */
+    private void afterLayout() {
+        final ViewTreeObserver vto = column.getViewTreeObserver();
+        vto.addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
+            @Override
+            public void onGlobalLayout() {
+                column.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                onScroll();
+            }
+        });
+        column.requestLayout();
+    }
+
     private void onScroll() {
         updateProgress();
         int top = scroll.getScrollY(), bottom = top + scroll.getHeight();
@@ -356,6 +360,7 @@ final class Reader extends FrameLayout {
         int[] base = new int[2];
         column.getLocationInWindow(base);
         for (Picture p : pictures) {
+            if (p.getHeight() == 0) continue;  // not laid out yet: afterLayout comes back
             p.getLocationInWindow(loc);
             int y = loc[1] - base[1] + column.getTop();
             p.setNear(y + p.getHeight() > top - scroll.getHeight() && y < bottom + scroll.getHeight() * 2);
@@ -438,12 +443,18 @@ final class Reader extends FrameLayout {
             if (value == near) return;
             near = value;
             if (near) {
-                images.load(this, url, Math.max(1, getWidth()), Math.max(1, getHeight()), true);
+                if (getWidth() > 0) images.load(this, url, getWidth(), getHeight(), true);  // else onSizeChanged
             } else {
                 images.cancel(this);
                 bitmap = null;
                 invalidate();
             }
+        }
+
+        @Override
+        protected void onSizeChanged(int w, int h, int ow, int oh) {
+            super.onSizeChanged(w, h, ow, oh);
+            if (near && w > 0 && h > 0) images.load(this, url, w, h, true);
         }
 
         @Override

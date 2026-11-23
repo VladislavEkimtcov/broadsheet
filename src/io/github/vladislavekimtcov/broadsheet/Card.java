@@ -144,10 +144,22 @@ final class Card extends View implements Images.Target {
         int titleLines = style == HERO ? 3 : (style == BRIEF ? 4 : 3);
         title = layout(story.title, titlePaint, tw, titleLines, 1.04f);
         excerpt = null;
-        if (story.excerpt != null && (style == HERO || style == BRIEF)) {
-            excerpt = layout(story.excerpt, excerptPaint, tw, style == HERO ? 2 : 3, 1.15f);
+        if (story.excerpt != null && style == HERO) {
+            excerpt = layout(story.excerpt, excerptPaint, tw, 2, 1.15f);
+        } else if (story.excerpt != null && style == BRIEF && getHeight() > 0) {
+            // As many whole lines as fit under the headline, the last one ellipsized.
+            float room = getHeight() - pad - briefExcerptTop(pad);
+            for (int lines = 3; lines > 0 && excerpt == null; lines--) {
+                StaticLayout l = layout(story.excerpt, excerptPaint, tw, lines, 1.15f);
+                if (l.getLineBottom(l.getLineCount() - 1) - l.getSpacingAdd() <= room) excerpt = l;
+            }
         }
-        metaPaint.setColor(story.accent);
+        // Over a picture the publisher's colour can vanish (red on red): keep the hero's light.
+        metaPaint.setColor(style == HERO ? 0xE6FFFFFF : story.accent);
+    }
+
+    private float briefExcerptTop(int pad) {
+        return pad + metaPaint.getTextSize() * 0.85f + Ui.dp(10) + title.getHeight() + Ui.dp(8);
     }
 
     private static StaticLayout layout(String text, TextPaint p, int width, int lines, float spacing) {
@@ -189,31 +201,24 @@ final class Card extends View implements Images.Target {
             y -= title.getHeight();
             drawLayout(c, title, pad, y);
             y -= Ui.dp(10) + metaPaint.getTextSize();
-            drawMeta(c, pad, y + metaPaint.getTextSize() * 0.85f);
+            drawMeta(c, pad, y + metaPaint.getTextSize() * 0.85f, w - pad * 2);
             if (story.paid) drawBadge(c, pad, pad);
         } else if (style == TILE) {
             int ih = w * 9 / 16;
             drawPicture(c, 0, 0, w, ih);
             int pad = Ui.dp(12);
             float y = ih + pad + metaPaint.getTextSize() * 0.85f;
-            drawMeta(c, pad, y);
+            drawMeta(c, pad, y, w - pad * 2);
             drawLayout(c, title, pad, y + Ui.dp(9));
             if (story.paid) drawBadge(c, Ui.dp(8), Ui.dp(8));
         } else {
             fill.setColor(Ui.mix(Ui.SURFACE, story.background, 0.12f));
             c.drawRect(0, 0, w, h, fill);
             int pad = Ui.dp(12);
-            float y = pad + metaPaint.getTextSize() * 0.85f;
-            drawMeta(c, pad, y);
-            y += Ui.dp(10);
-            drawLayout(c, title, pad, y);
-            y += title.getHeight() + Ui.dp(8);
-            if (excerpt != null && y + excerptPaint.getTextSize() * 1.2f < h - pad) {
-                c.save();
-                c.clipRect(0, 0, w, h - pad);
-                drawLayout(c, excerpt, pad, y);
-                c.restore();
-            }
+            float metaWidth = w - pad * 2 - (story.paid ? badgeWidth() + Ui.dp(8) : 0);
+            drawMeta(c, pad, pad + metaPaint.getTextSize() * 0.85f, metaWidth);
+            drawLayout(c, title, pad, pad + metaPaint.getTextSize() * 0.85f + Ui.dp(10));
+            drawLayout(c, excerpt, pad, briefExcerptTop(pad));
             if (story.paid) drawBadge(c, w - pad - badgeWidth(), pad - Ui.dp(2));
         }
         c.restore();
@@ -236,9 +241,16 @@ final class Card extends View implements Images.Target {
         fill.setAlpha(255);
     }
 
-    private void drawMeta(Canvas c, float x, float baseline) {
+    private void drawMeta(Canvas c, float x, float baseline, float width) {
         if (meta == null) return;
-        String m = TextUtils.ellipsize(meta, metaPaint, getWidth() - x * 2, TextUtils.TruncateAt.END).toString();
+        String m = meta;
+        if (metaPaint.measureText(m) > width) {
+            // Short of room: shorten the publisher, keep the date.
+            String when = Dates.ago(story.published, now);
+            String tail = story.channel != null && !when.isEmpty() ? "  ·  " + when : "";
+            m = TextUtils.ellipsize(tail.isEmpty() ? meta : story.channel, metaPaint,
+                    width - metaPaint.measureText(tail), TextUtils.TruncateAt.END) + tail;
+        }
         c.drawText(m, x, baseline, metaPaint);
     }
 

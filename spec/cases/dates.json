@@ -1,0 +1,22 @@
+{
+  "about": "Parsing the relay's dates and the labels under a story (Dates.java, windows/src/Dates.cs). Times without a zone are UTC. Both test suites read this file.",
+  "parse": [
+    { "name": "iso date", "in": "2026-11-22T14:03:00Z", "utc": "2026-11-22T14:03:00" },
+    { "name": "iso with offset", "in": "2026-11-22T14:03:00.123-05:00", "utc": "2026-11-22T19:03:00" },
+    { "name": "rfc 822", "in": "Sun, 22 Nov 2026 14:03:00 GMT", "utc": "2026-11-22T14:03:00" },
+    { "name": "bad date is 0", "in": "garbage", "utc": null }
+  ],
+  "ago": [
+    { "name": "just now", "now": "2026-11-23T12:00:00", "when": "2026-11-23T11:59:30", "expect": "Just now" },
+    { "name": "minutes ago", "now": "2026-11-23T12:00:00", "when": "2026-11-23T11:48:00", "expect": "12m ago" },
+    { "name": "hours ago", "now": "2026-11-23T12:00:00", "when": "2026-11-23T09:00:00", "expect": "3h ago" },
+    { "name": "yesterday", "now": "2026-11-23T12:00:00", "when": "2026-11-22T06:00:00", "expect": "Yesterday" },
+    { "name": "days ago", "now": "2026-11-23T12:00:00", "when": "2026-11-20T12:00:00", "expect": "3d ago" },
+    { "name": "this year", "now": "2026-11-23T12:00:00", "when": "2026-09-05T12:00:00", "expect": "Sep 5" },
+    { "name": "last year", "now": "2026-11-23T12:00:00", "when": "2025-07-18T12:00:00", "expect": "Jul 18, 2025" }
+  ],
+  "reading_time": [
+    { "name": "reading time", "words": 1000, "expect": "4 min read" },
+    { "name": "never under a minute", "words": 0, "expect": "1 min read" }
+  ]
+}

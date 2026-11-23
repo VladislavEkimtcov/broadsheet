@@ -174,7 +174,7 @@ namespace Broadsheet
         /// <summary>Relative luminance (WCAG) of the hero headline's colour.</summary>
         static readonly double TEXT_LUMINANCE = Luminance(0xF4, 0xEF, 0xE6);
 
-        static double Luminance(double r, double g, double b)
+        static double Luminance(double r, double g, double b)  // feature: front.hero_contrast
         {
             return 0.2126 * Linear(r) + 0.7152 * Linear(g) + 0.0722 * Linear(b);
         }

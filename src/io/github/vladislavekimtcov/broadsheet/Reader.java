@@ -30,7 +30,7 @@ import java.util.List;
  * Fast-forward/Rewind a full screen, Left/Right the previous/next story, Back the front page.
  * A video scrolled into view is selected (ringed, "Play video"): OK or Play plays it.
  */
-final class Reader extends FrameLayout {
+final class Reader extends FrameLayout {  // feature: reader.column
     interface Listener {
         void onClose();
 
@@ -374,7 +374,7 @@ final class Reader extends FrameLayout {
             case KeyEvent.KEYCODE_DPAD_UP:
                 scroll.smoothScrollBy(0, -Math.round(h * 0.45f));
                 return true;
-            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+            case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:  // feature: reader.page_keys
             case KeyEvent.KEYCODE_PAGE_DOWN:
             case KeyEvent.KEYCODE_CHANNEL_DOWN:
                 scroll.smoothScrollBy(0, Math.round(h * 0.9f));
@@ -384,7 +384,7 @@ final class Reader extends FrameLayout {
             case KeyEvent.KEYCODE_CHANNEL_UP:
                 scroll.smoothScrollBy(0, -Math.round(h * 0.9f));
                 return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:  // feature: reader.prev_next
                 listener.onMove(1);
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -536,7 +536,7 @@ final class Reader extends FrameLayout {
         private final android.text.TextPaint timePaint = Ui.paint(15, Ui.MUTED, Ui.sansMedium);
         private final android.text.TextPaint pressPaint = Ui.paint(15, Ui.MUTED, Ui.textItalic);
         private final Paint fill = new Paint();
-        private final String[] press = {"Setting the type", "Inking the plates", "Running the press", "Folding the pages"};
+        private final String[] press = {"Setting the type", "Inking the plates", "Running the press", "Folding the pages"};  // feature: reader.loading_band
 
         Ticker(Context c) {
             super(c);

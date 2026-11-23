@@ -215,7 +215,7 @@ final class Card extends View implements Images.Target {
     /** Relative luminance (WCAG) of the headline's colour, 0xF4EFE6. */
     private static final float TEXT_LUMINANCE = luminance(0xF4, 0xEF, 0xE6);
 
-    private static float luminance(float r, float g, float b) {
+    private static float luminance(float r, float g, float b) {  // feature: front.hero_contrast
         return 0.2126f * linear(r) + 0.7152f * linear(g) + 0.0722f * linear(b);
     }
 

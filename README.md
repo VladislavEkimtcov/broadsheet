@@ -93,7 +93,8 @@ adb push relay.conf /sdcard/Android/data/io.github.vladislavekimtcov.broadsheet/
 [`windows/`](windows/README.md) has a Windows desktop port of Broadsheet: the same front page,
 reader and options, with mouse, touchpad and keyboard. It's a single `Broadsheet.exe` that
 builds and runs on a bare Windows 10/11 (IoT Enterprise LTSC included) with what ships in the
-box (.NET Framework 4.8, MSBuild 4.0, C# 5): `windows\build.cmd`.
+box (.NET Framework 4.8, MSBuild 4.0, C# 5): `windows\build.cmd`. The two apps share no code;
+[PARITY.md](PARITY.md) lists what each one does and where they differ on purpose.
 
 ## Build
 
@@ -108,11 +109,14 @@ adb install -r build/broadsheet.apk
 (it's git-ignored): updates must be signed with the same key. Banner: `python3 tools/art.py`
 (Pillow). Fonts: `python3 tools/fonts.py` (fontTools).
 
-Sunrise and sunset have a test that runs on the computer:
+Dates and sunrise/sunset have tests that run on the computer. They read the cases in
+`spec/cases/`, which the Windows port's tests read too:
 
 ```sh
-javac -d build/test src/io/github/vladislavekimtcov/broadsheet/Sun.java tests/SunTest.java
-java -cp build/test io.github.vladislavekimtcov.broadsheet.SunTest
+P=src/io/github/vladislavekimtcov/broadsheet
+javac -d build/test $P/Sun.java $P/Dates.java tests/CasesTest.java
+java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
+python3 tools/parity.py          # PARITY.md against both apps' code
 ```
 
 ## How it talks to the relay

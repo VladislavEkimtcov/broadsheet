@@ -3,3 +3,4 @@ build/
 *.jks
 .DS_Store
 relay.conf
+.claude/

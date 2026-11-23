@@ -18,7 +18,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1 [-Autostart] [-Uninstall]
 ```
 
 Warning MSB3644 (no reference assemblies) is expected: MSBuild falls back to the GAC. The build
-needs `..\assets\fonts`, so copy this folder together with `assets/`.
+needs `..\assets\fonts`, and the tests read `..\spec\cases`, so copy this folder together with
+`assets/` and `spec/`.
 
 ## Use
 
@@ -52,4 +53,5 @@ then remembers the address.
 
 C# 5 and WPF, all in `src/`, hand-drawn like the TV app: one element per card, pictures
 decoded at the size they're shown, and nothing animating at rest. The Windows-only parts and
-how they differ from the TV app are listed at the top of `src/MainWindow.cs`.
+how they differ from the TV app are listed in [PARITY.md](../PARITY.md), feature by feature; the code
+is tagged `// feature: <id>` on both sides.

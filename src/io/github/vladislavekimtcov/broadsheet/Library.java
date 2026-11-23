@@ -29,7 +29,7 @@ final class Library {
     private boolean dirty;
 
     Library(File dir) {
-        file = new File(dir, "library.json");
+        file = new File(dir, "library.json");  // feature: library.local
         load();
     }
 
@@ -42,7 +42,7 @@ final class Library {
     }
 
     /** How far into the story the reader got, 0 if never opened here. */
-    float position(String id) {
+    float position(String id) {  // feature: reader.resume
         Float f = read.get(id);
         return f == null ? 0f : f;
     }

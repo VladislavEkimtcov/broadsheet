@@ -124,7 +124,7 @@ namespace Broadsheet
     {
         const int KEEP_READ = 1500, KEEP_REACTIONS = 400;
 
-        readonly string file = Path.Combine(Paths.Roaming, "library.json");
+        readonly string file = Path.Combine(Paths.Roaming, "library.json");  // feature: library.local
         readonly Ordered<double> read = new Ordered<double>();
         readonly Ordered<string> reactions = new Ordered<string>();
         JObj last;
@@ -136,7 +136,7 @@ namespace Broadsheet
 
         public int ReadCount { get { return read.Count; } }
 
-        public double Position(string id)
+        public double Position(string id)  // feature: reader.resume
         {
             double f;
             return read.TryGet(id, out f) ? f : 0;

@@ -19,16 +19,11 @@ namespace Broadsheet
     /// panel slides over both, and a story's video over everything. The whole page is laid out in
     /// the TV's units and scaled to the window, so it keeps its proportions from a laptop to a wall.
     ///
-    /// DIVERGENCE FROM THE TV APP (src/io/github/vladislavekimtcov/broadsheet/, Java): this port
-    /// started as a line-by-line copy of Main.java/Front.java/Reader.java/Options.java and has since
-    /// grown Windows-only parts, on the owner's request. Whoever syncs the two should know these are
-    /// deliberate, not drift: mouse and touchpad (hover focus, clicks, browser-like wheel and 1:1
-    /// precision-touchpad scrolling in Scroller.cs), an icon-only back arrow in the reader and a
-    /// hamburger for the options panel (IconButton), "Open in the browser" in Options, F5/F11 keys,
-    /// subnet scan without Bonjour (Relay.cs), Windows time zone ids (Sun.cs), video via
-    /// MediaElement with a browser fallback (Player.cs), and paragraphs split on line breaks
-    /// (Reader.Block). Features added to the TV app later need porting here by hand; there is no
-    /// shared code (C# 5 / .NET 4.8 vs Java / Android).
+    /// PARITY WITH THE TV APP (src/io/github/vladislavekimtcov/broadsheet/, Java): there is no shared
+    /// code (C# 5 / .NET 4.8 vs Java / Android), so features are ported by hand. PARITY.md at the repo
+    /// root lists every feature, what each app does, and which differences are deliberate (mouse,
+    /// touchpad, icon buttons, Open in the browser, F5/F11, no Bonjour, MediaElement video, paragraph
+    /// splitting). Code is tagged "// feature: <id>"; grep the ID to find the other side.
     /// </summary>
     sealed class MainWindow : Window, Front.IListener, Reader.IListener, Player.IListener, Options.IListener
     {
@@ -124,7 +119,7 @@ namespace Broadsheet
             Icon = MakeIcon();
             Paths.Log("views");
 
-            List<Section> cached = relay.CachedFront();
+            List<Section> cached = relay.CachedFront();  // feature: front.cache
             if (cached != null && cached.Count > 0)
             {
                 SetBase(cached);
@@ -215,7 +210,7 @@ namespace Broadsheet
             root.Children.Add(reader);
             // Windows only: a hamburger at the top right slides the options panel out (Menu key, M
             // and a right-click do too); above the page and the reader, under video and the panel.
-            IconButton menu = new IconButton(Icons.MENU, "Options", () => { if (options.IsOpen) options.Close(); else OpenOptions(OptionsTarget(), true); });
+            IconButton menu = new IconButton(Icons.MENU, "Options", () => { if (options.IsOpen) options.Close(); else OpenOptions(OptionsTarget(), true); });  // feature: win.icon_buttons
             menu.HorizontalAlignment = HorizontalAlignment.Right;
             menu.VerticalAlignment = VerticalAlignment.Top;
             menu.Margin = new Thickness(0, 16, 18, 0);
@@ -370,7 +365,7 @@ namespace Broadsheet
         int AutoRefreshStep { get { return Math.Max(0, Math.Min(AUTO_REFRESH_MIN.Length - 1, prefs.GetInt("auto_refresh", 0))); } }
 
         /// <summary>Asks the Mac to refresh Today now and then; reloads quietly when it's done.</summary>
-        void MaybeRefreshToday()
+        void MaybeRefreshToday()  // feature: opt.auto_refresh
         {
             int minutes = AUTO_REFRESH_MIN[AutoRefreshStep];
             long last = prefs.GetLong("refreshed", 0);
@@ -473,7 +468,7 @@ namespace Broadsheet
             if (openSection != null && openIndex + 1 < openSection.Stories.Count) Prefetch(openSection.Stories[openIndex + 1]);
         }
 
-        void Prefetch(Story s)
+        void Prefetch(Story s)  // feature: reader.prefetch
         {
             if (s.Completeness != "summary" || !prefetched.Add(s.Id)) return;
             relay.Prefetch(s.Id);
@@ -552,7 +547,7 @@ namespace Broadsheet
         }
 
         /// <summary>Light by day and dark after sunset (or as chosen); builds the views again on a change.</summary>
-        void ApplyTheme()
+        void ApplyTheme()  // feature: theme.sun
         {
             themeTick.Stop();
             if (ThemeMode == "auto")
@@ -671,17 +666,17 @@ namespace Broadsheet
             if (s != null)
             {
                 if (s.ChannelId != null && s.Channel != null)
-                    moreChoices.Add(new[] { "More from " + s.Channel, "/v1/channels/" + s.ChannelId + "/articles?limit=45", "channels", s.ChannelId });
+                    moreChoices.Add(new[] { "More from " + s.Channel, "/v1/channels/" + s.ChannelId + "/articles?limit=45", "channels", s.ChannelId });  // feature: opt.more_from
                 Article a = TargetArticle();
                 if (a != null)
                     foreach (string[] t in a.Topics)
                         moreChoices.Add(new[] { "More on " + t[1], "/v1/topics/" + t[0] + "/articles?limit=45", "topics", t[0] });
-                moreChoices.Add(new[] { "Related stories", "/v1/articles/" + s.Id + "/related", null, null });
+                moreChoices.Add(new[] { "Related stories", "/v1/articles/" + s.Id + "/related", null, null });  // feature: opt.related
             }
             moreIndex = Math.Min(moreIndex, Math.Max(0, moreChoices.Count - 1));
 
-            saveTile = new Options.Tile("☆", "Save story") { OnOk = ToggleSave };
-            reactTile = new Options.Tile("♥", "Like or dislike")
+            saveTile = new Options.Tile("☆", "Save story") { OnOk = ToggleSave };  // feature: opt.save
+            reactTile = new Options.Tile("♥", "Like or dislike")  // feature: opt.react
             {
                 Segments = new[] { "More like this", "Fewer like this" },
                 SegmentIcons = new[] { Icons.THUMB_UP, Icons.THUMB_DOWN },
@@ -690,7 +685,7 @@ namespace Broadsheet
             };
             string r = s == null ? null : library.Reaction(s.Id);
             reactTile.Segment = r == "dislike" ? 1 : 0;
-            unreadTile = new Options.Tile("○", "Mark as unread") { OnOk = ToggleRead };
+            unreadTile = new Options.Tile("○", "Mark as unread") { OnOk = ToggleRead };  // feature: opt.unread
             moreTile = new Options.Tile("≡", "More like this")
             {
                 OnStep = d =>
@@ -701,7 +696,7 @@ namespace Broadsheet
                 },
                 OnOk = OpenMore
             };
-            sizeTile = new Options.Tile("Aa", "Text size")
+            sizeTile = new Options.Tile("Aa", "Text size")  // feature: opt.text_size
             {
                 Slider = Reader.SIZES.Length,
                 OnStep = d =>
@@ -714,7 +709,7 @@ namespace Broadsheet
                     FillOptions();
                 }
             };
-            themeTile = new Options.Tile("◐", "Appearance")
+            themeTile = new Options.Tile("◐", "Appearance")  // feature: opt.theme
             {
                 OnStep = d =>
                 {
@@ -724,7 +719,7 @@ namespace Broadsheet
                     ApplyTheme();
                 }
             };
-            readTile = new Options.Tile("◉", "Stories you've read")
+            readTile = new Options.Tile("◉", "Stories you've read")  // feature: opt.read_mode
             {
                 OnStep = d =>
                 {
@@ -755,7 +750,7 @@ namespace Broadsheet
             if (s != null && (s.Url ?? s.AppleNewsUrl) != null)
             {
                 string link = s.Url ?? s.AppleNewsUrl;
-                webTile = new Options.Tile("↗", "Open in the browser")
+                webTile = new Options.Tile("↗", "Open in the browser")  // feature: win.browser
                 {
                     OnOk = () =>
                     {
@@ -764,7 +759,7 @@ namespace Broadsheet
                     }
                 };
             }
-            refreshTile = new Options.Tile("↻", "Refresh now")
+            refreshTile = new Options.Tile("↻", "Refresh now")  // feature: opt.refresh
             {
                 OnOk = () => { RefreshNow(); Load(); },
                 OnStep = d =>
@@ -786,7 +781,7 @@ namespace Broadsheet
             string about = s == null ? "Choose a story to save it, like it or find more like it."
                 : (s.Channel != null ? s.Channel + "  ·  " : "") + s.Title;
             options.Open(tiles, about, slide);
-            relay.Handoff((h, error) =>
+            relay.Handoff((h, error) =>  // feature: opt.handoff
             {
                 if (!options.IsOpen || h == null) return;
                 Story mac = Story.From(h.Obj("article"));
@@ -1011,7 +1006,7 @@ namespace Broadsheet
             front.Open("more");
         }
 
-        void ContinueReading(Story s)
+        void ContinueReading(Story s)  // feature: opt.continue
         {
             Section inSection = null;
             int index = 0;
@@ -1040,7 +1035,7 @@ namespace Broadsheet
         void OnKeyDown(object sender, KeyEventArgs e)
         {
             Key k = e.Key == Key.System ? e.SystemKey : e.Key;
-            if (k == Key.F11 || (k == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Alt) != 0))
+            if (k == Key.F11 || (k == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Alt) != 0))  // feature: win.keys
             {
                 ToggleFullScreen();
                 e.Handled = true;

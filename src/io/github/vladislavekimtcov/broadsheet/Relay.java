@@ -59,7 +59,7 @@ final class Relay {
         }
     }
 
-    static final String SERVICE = "_newsrelay._tcp.";
+    static final String SERVICE = "_newsrelay._tcp.";  // feature: relay.bonjour
     /** The relay's default port, for the subnet scan. */
     static final int PORT = 8787;
     private static final int MAX_JSON = 8 * 1024 * 1024;
@@ -100,7 +100,7 @@ final class Relay {
 
     private void readConfig() {
         File dir = context.getExternalFilesDir(null);
-        File f = dir == null ? null : new File(dir, "relay.conf");
+        File f = dir == null ? null : new File(dir, "relay.conf");  // feature: relay.conf
         if (f == null || !f.isFile()) return;
         try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             for (String line; (line = r.readLine()) != null; ) {
@@ -240,7 +240,7 @@ final class Relay {
      * Knocks on port 8787 of every address in this TV's subnet (a /24 at most), 32 at a time, and
      * asks whatever answers whether it is the relay. Takes a few seconds; stops once found.
      */
-    private void scan(final AtomicBoolean finished, final Found found) {
+    private void scan(final AtomicBoolean finished, final Found found) {  // feature: relay.subnet
         List<InetAddress> hosts = neighbours();
         if (hosts.isEmpty()) return;
         ExecutorService pool = Executors.newFixedThreadPool(32);

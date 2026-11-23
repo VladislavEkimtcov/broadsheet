@@ -126,7 +126,7 @@ namespace Broadsheet
         double direct = double.NaN;
         int directAt;
 
-        protected override void OnMouseWheel(MouseWheelEventArgs e)
+        protected override void OnMouseWheel(MouseWheelEventArgs e)  // feature: win.wheel
         {
             e.Handled = true;
             // The page is laid out in TV units and scaled to the window: move by screen pixels.

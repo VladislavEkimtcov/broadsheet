@@ -17,7 +17,7 @@ namespace Broadsheet
     /// Focus is kept here, not in WPF's keyboard focus: one card or one rail item is lit, arrows move
     /// it by geometry (as a D-pad does on the TV), the mouse moves it by hovering.
     /// </summary>
-    sealed class Front : Grid
+    sealed class Front : Grid  // feature: front.rail
     {
         public interface IListener
         {
@@ -561,7 +561,7 @@ namespace Broadsheet
 
             protected override void OnMouseLeave(MouseEventArgs e) { hover = false; InvalidateVisual(); }
 
-            protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+            protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)  // feature: win.mouse
             {
                 front.RailClicked(Index);
                 e.Handled = true;

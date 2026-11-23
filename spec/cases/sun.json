@@ -1,0 +1,25 @@
+{
+  "about": "When the page turns light and dark (Sun.java, windows/src/Sun.cs). Times are local wall-clock times in the case's zone. Both test suites read this file: tests/CasesTest.java and windows/tests/Tests.cs.",
+  "windows_zones": {
+    "America/New_York": "Eastern Standard Time",
+    "Europe/Oslo": "W. Europe Standard Time",
+    "Pacific/Chatham": "Chatham Islands Standard Time"
+  },
+  "dark": [
+    { "name": "dark before sunrise", "zone": "America/New_York", "local": "2026-11-23T06:30", "dark": true },
+    { "name": "light after sunrise", "zone": "America/New_York", "local": "2026-11-23T07:15", "dark": false },
+    { "name": "light before sunset", "zone": "America/New_York", "local": "2026-11-23T16:20", "dark": false },
+    { "name": "dark after sunset", "zone": "America/New_York", "local": "2026-11-23T16:45", "dark": true }
+  ],
+  "next_change": [
+    { "name": "next change from noon is sunset", "zone": "America/New_York", "local": "2026-11-23T12:00", "expect": "2026-11-23T16:31", "tolerance_minutes": 6 },
+    { "name": "next change at night is tomorrow's sunrise", "zone": "America/New_York", "local": "2026-11-23T22:00", "expect": "2026-11-24T06:54", "tolerance_minutes": 6 }
+  ],
+  "next_sunrise": [
+    { "name": "next sunrise", "zone": "America/New_York", "local": "2026-11-23T12:00", "expect": "2026-11-24T06:54", "tolerance_minutes": 6 }
+  ],
+  "turns_within_a_day": [
+    { "name": "always a next change (north)", "zone": "Europe/Oslo", "local": "2026-11-23T12:00" },
+    { "name": "unlisted zone still turns", "zone": "Pacific/Chatham", "local": "2026-11-23T12:00" }
+  ]
+}

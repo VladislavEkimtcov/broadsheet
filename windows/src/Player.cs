@@ -16,7 +16,7 @@ namespace Broadsheet
     /// Keys: Space/Enter pause and resume, Left/Right 10 s, Page Up/Down 30 s, Esc closes. Clicking
     /// pauses; the controls hide after a few seconds of playing.
     /// </summary>
-    sealed class Player : Grid
+    sealed class Player : Grid  // feature: video.inline
     {
         public interface IListener
         {

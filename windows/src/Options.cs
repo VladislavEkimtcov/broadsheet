@@ -114,7 +114,7 @@ namespace Broadsheet
     /// a tile, Left/Right changes its value, Enter does it; the mouse clicks the same things. The
     /// panel keeps the selection itself, so focus on the page behind stays where it was.
     /// </summary>
-    sealed class Options : Grid
+    sealed class Options : Grid  // feature: opt.panel
     {
         public interface IListener
         {
@@ -284,7 +284,7 @@ namespace Broadsheet
             listener.OnOptionsClosed();
         }
 
-        public void SetFooter(string text) { footer.Text = text; }
+        public void SetFooter(string text) { footer.Text = text; }  // feature: opt.status_footer
 
         /// <summary>Redraws the tiles after their state changed.</summary>
         public void Refresh()

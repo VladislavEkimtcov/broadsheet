@@ -19,7 +19,7 @@ namespace Broadsheet
     /// Keys: Down/Up half a screen, gliding (as on the TV), Space and Page Down/Up a screen; Enter half a screen (at the end it opens the next story), Left/Right the previous/next story, Esc or Backspace the
     /// front page. A video scrolled into view is selected (ringed, "Play video"): Enter plays it.
     /// </summary>
-    sealed class Reader : Grid
+    sealed class Reader : Grid  // feature: reader.column
     {
         public interface IListener
         {
@@ -66,7 +66,7 @@ namespace Broadsheet
             progress.RenderTransform = progressScale;
             Children.Add(progress);
             // Windows only: an icon-only back arrow at the top left (the TV has its remote's Back).
-            IconButton back = new IconButton(Icons.BACK, "Back to the front page", () => listener.OnClose());
+            IconButton back = new IconButton(Icons.BACK, "Back to the front page", () => listener.OnClose());  // feature: win.icon_buttons
             back.HorizontalAlignment = HorizontalAlignment.Left;
             back.VerticalAlignment = VerticalAlignment.Top;
             back.Margin = new Thickness(18, 16, 0, 0);
@@ -280,7 +280,7 @@ namespace Broadsheet
                 case "paragraph":
                     {
                         // Some publishers send several paragraphs as one, split by line breaks.
-                        foreach (string part in b.Text.Split('\n'))
+                        foreach (string part in b.Text.Split('\n'))  // feature: win.paragraphs
                         {
                             if (part.Trim().Length == 0) continue;
                             TextBlock v = Text(Size, Ui.BODY, Ui.TextFace, 1.45);
@@ -384,7 +384,7 @@ namespace Broadsheet
                 case Key.Up:
                     scroll.ScrollBy(-h * 0.45);
                     return true;
-                case Key.PageDown:
+                case Key.PageDown:  // feature: reader.page_keys
                 case Key.MediaNextTrack:
                     scroll.ScrollBy(h * 0.9);
                     return true;
@@ -398,7 +398,7 @@ namespace Broadsheet
                 case Key.End:
                     scroll.ScrollTo(scroll.Max, true);
                     return true;
-                case Key.Right:
+                case Key.Right:  // feature: reader.prev_next
                     listener.OnMove(1);
                     return true;
                 case Key.Left:
@@ -538,7 +538,7 @@ namespace Broadsheet
             DateTime started;
             string stage = "";
             bool running;
-            static readonly string[] PRESS = { "Setting the type", "Inking the plates", "Running the press", "Folding the pages" };
+            static readonly string[] PRESS = { "Setting the type", "Inking the plates", "Running the press", "Folding the pages" };  // feature: reader.loading_band
 
             public Ticker(Reader r)
             {

@@ -26,7 +26,7 @@ import java.util.Locale;
  * <p>Keys: OK or Play/Pause pauses and resumes, Left/Right 10 s, Rewind/Fast-forward 30 s,
  * Up/Down show the controls, Back closes. The controls hide after a few seconds of playing.
  */
-final class Player extends FrameLayout implements TextureView.SurfaceTextureListener {
+final class Player extends FrameLayout implements TextureView.SurfaceTextureListener {  // feature: video.inline
     interface Listener {
         void onPlayerClosed();
     }

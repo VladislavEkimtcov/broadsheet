@@ -24,7 +24,7 @@ import java.util.Locale;
  * and Saved Stories), and the chosen section as a hero, two briefs and rows of three tiles.
  * Moving along the rail switches section after a short pause, so holding Down skims past.
  */
-final class Front extends FrameLayout implements Scroller.Watcher {
+final class Front extends FrameLayout implements Scroller.Watcher {  // feature: front.rail
     interface Listener {
         void onOpen(Relay.Section section, int index);
 

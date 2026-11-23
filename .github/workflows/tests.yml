@@ -3,7 +3,15 @@ on:
   push:
   pull_request:
 jobs:
-  sun:
+  parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: PARITY.md against the code of both apps
+        run: python3 tools/parity.py --diff "${{ github.event.pull_request.base.sha || github.event.before }}"
+  tv:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -11,7 +19,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Sunrise and sunset
+      - name: Shared cases (spec/cases) on the TV app's code
         run: |
-          javac -d build/test src/io/github/vladislavekimtcov/broadsheet/Sun.java tests/SunTest.java
-          java -cp build/test io.github.vladislavekimtcov.broadsheet.SunTest
+          P=src/io/github/vladislavekimtcov/broadsheet
+          javac -d build/test $P/Sun.java $P/Dates.java tests/CasesTest.java
+          java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the in-box .NET 4.8 toolchain and run the tests (incl. spec/cases)
+        shell: cmd
+        run: windows\build.cmd test

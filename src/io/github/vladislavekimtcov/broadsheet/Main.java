@@ -98,7 +98,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         setContentView(root);
         buildViews();
 
-        List<Relay.Section> cached = relay.cachedFront();
+        List<Relay.Section> cached = relay.cachedFront();  // feature: front.cache
         if (cached != null && !cached.isEmpty()) {
             setBase(cached);
             front.setSections(shown, false);
@@ -251,7 +251,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     }
 
     /** Asks the Mac to refresh Today now and then; reloads quietly when it's done. */
-    private void maybeRefreshToday() {
+    private void maybeRefreshToday() {  // feature: opt.auto_refresh
         int minutes = AUTO_REFRESH_MIN[autoRefreshStep()];
         long last = prefs.getLong("refreshed", 0);
         if (minutes == 0 || refreshing || System.currentTimeMillis() - last < minutes * 60 * 1000L) return;
@@ -338,7 +338,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
     private final Set<String> prefetched = new HashSet<>();
     private Story focusedStory;
-    private final Runnable prefetchFocused = () -> {
+    private final Runnable prefetchFocused = () -> {  // feature: reader.prefetch
         if (focusedStory != null && reader.getVisibility() != View.VISIBLE) prefetch(focusedStory);
     };
 
@@ -431,7 +431,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     }
 
     /** Light by day and dark after sunset (or as chosen); builds the views again on a change. */
-    private void applyTheme() {
+    private void applyTheme() {  // feature: theme.sun
         root.removeCallbacks(themeTick);
         if ("auto".equals(themeMode())) {
             long now = System.currentTimeMillis();
@@ -523,7 +523,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         moreChoices.clear();
         if (s != null) {
             if (s.channelId != null && s.channel != null) {
-                moreChoices.add(new String[] {"More from " + s.channel, "/v1/channels/" + s.channelId + "/articles?limit=45",
+                moreChoices.add(new String[] {"More from " + s.channel, "/v1/channels/" + s.channelId + "/articles?limit=45",  // feature: opt.more_from
                         "channels", s.channelId});
             }
             Article a = targetArticle();
@@ -532,20 +532,20 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                     moreChoices.add(new String[] {"More on " + t[1], "/v1/topics/" + t[0] + "/articles?limit=45", "topics", t[0]});
                 }
             }
-            moreChoices.add(new String[] {"Related stories", "/v1/articles/" + s.id + "/related", null, null});
+            moreChoices.add(new String[] {"Related stories", "/v1/articles/" + s.id + "/related", null, null});  // feature: opt.related
         }
         moreIndex = Math.min(moreIndex, Math.max(0, moreChoices.size() - 1));
 
-        saveTile = new Options.Tile("☆", "Save story");
+        saveTile = new Options.Tile("☆", "Save story");  // feature: opt.save
         saveTile.onOk = this::toggleSave;
-        reactTile = new Options.Tile("♥", "Like or dislike");
+        reactTile = new Options.Tile("♥", "Like or dislike");  // feature: opt.react
         reactTile.segments = new String[] {"More like this", "Fewer like this"};
         reactTile.segmentIcons = new int[] {Icons.THUMB_UP, Icons.THUMB_DOWN};
         reactTile.checked = new boolean[2];
         reactTile.onOk = this::sendReaction;
         String r = s == null ? null : library.reaction(s.id);
         reactTile.segment = "dislike".equals(r) ? 1 : 0;
-        unreadTile = new Options.Tile("○", "Mark as unread");
+        unreadTile = new Options.Tile("○", "Mark as unread");  // feature: opt.unread
         unreadTile.onOk = this::toggleRead;
         moreTile = new Options.Tile("≡", "More like this");
         moreTile.onStep = d -> {
@@ -554,7 +554,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             fillOptions();
         };
         moreTile.onOk = this::openMore;
-        sizeTile = new Options.Tile("Aa", "Text size");
+        sizeTile = new Options.Tile("Aa", "Text size");  // feature: opt.text_size
         sizeTile.slider = Reader.SIZES.length;
         sizeTile.onStep = d -> {
             int step = Math.max(0, Math.min(Reader.SIZES.length - 1, reader.sizeStep() + d));
@@ -564,14 +564,14 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             if (reader.getVisibility() == View.VISIBLE) reader.relayout();
             fillOptions();
         };
-        themeTile = new Options.Tile("◐", "Appearance");
+        themeTile = new Options.Tile("◐", "Appearance");  // feature: opt.theme
         themeTile.onStep = d -> {
             int i = Math.max(0, Math.min(THEMES.length - 1, indexOf(THEMES, themeMode()) + d));
             prefs.edit().putString("theme", THEMES[i]).apply();
             fillOptions();
             applyTheme();
         };
-        readTile = new Options.Tile("◉", "Stories you've read");
+        readTile = new Options.Tile("◉", "Stories you've read");  // feature: opt.read_mode
         readTile.onStep = d -> {
             int i = Math.max(0, Math.min(READ_MODES.length - 1, indexOf(READ_MODES, readMode()) + d));
             if (READ_MODES[i].equals(readMode())) return;
@@ -591,7 +591,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 continueReading(unfinished);
             };
         }
-        refreshTile = new Options.Tile("↻", "Refresh now");
+        refreshTile = new Options.Tile("↻", "Refresh now");  // feature: opt.refresh
         refreshTile.onOk = this::refreshNow;
         refreshTile.onStep = d -> {
             int i = Math.max(0, Math.min(AUTO_REFRESH_MIN.length - 1, autoRefreshStep() + d));
@@ -613,7 +613,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         String about = s == null ? "Choose a story to save it, like it or find more like it."
                 : (s.channel != null ? s.channel + "  ·  " : "") + s.title;
         options.open(tiles, about, slide);
-        relay.handoff((h, error) -> {
+        relay.handoff((h, error) -> {  // feature: opt.handoff
             if (!options.isOpen() || h == null) return;
             final Story mac = Story.from(h.optJSONObject("article"));
             if (mac == null || (reader.getVisibility() == View.VISIBLE && reader.story() != null
@@ -816,7 +816,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         front.open("more");
     }
 
-    private void continueReading(Story s) {
+    private void continueReading(Story s) {  // feature: opt.continue
         Relay.Section in = null;
         int index = 0;
         for (Relay.Section sec : shown) {

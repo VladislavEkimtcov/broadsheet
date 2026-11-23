@@ -24,7 +24,7 @@ import java.util.function.IntConsumer;
  * OK does it. The panel keeps the selection itself, so focus on the page behind (the story the
  * tiles act on) stays where it was. Nothing in it moves at rest.
  */
-final class Options extends FrameLayout {
+final class Options extends FrameLayout {  // feature: opt.panel
     interface Listener {
         void onOptionsClosed();
     }
@@ -178,7 +178,7 @@ final class Options extends FrameLayout {
         listener.onOptionsClosed();
     }
 
-    void setFooter(String text) {
+    void setFooter(String text) {  // feature: opt.status_footer
         footer.setText(text);
     }
 

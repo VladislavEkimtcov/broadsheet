@@ -115,7 +115,7 @@ final class Dates {
     }
 
     /** "Just now", "12m ago", "3h ago", "Yesterday", "2d ago"; from a week on "Sep 5" or "Sep 5, 2025". */
-    static String ago(long when, long now) {
+    static String ago(long when, long now) {  // feature: dates.labels
         if (when <= 0) return "";
         long m = (now - when) / 60000;
         if (m < 2) return "Just now";

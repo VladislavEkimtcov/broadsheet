@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace Broadsheet
 {
@@ -23,6 +24,87 @@ namespace Broadsheet
             return (long)(utc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
         }
 
+        /// <summary>spec\cases, looked for upwards from the exe (windows\bin\ in the repo).</summary>
+        static string CasesDir()
+        {
+            DirectoryInfo d = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            for (; d != null; d = d.Parent)
+            {
+                string c = Path.Combine(Path.Combine(d.FullName, "spec"), "cases");
+                if (File.Exists(Path.Combine(c, "sun.json"))) return c;
+            }
+            return null;
+        }
+
+        /// <summary>"2026-11-23T06:30[:SS]" as {y, mo, d, h, mi, s}.</summary>
+        static int[] Fields(string s)
+        {
+            int[] f = new int[6];
+            string[] p = s.Split('-', 'T', ':');
+            for (int i = 0; i < p.Length; i++) f[i] = int.Parse(p[i]);
+            return f;
+        }
+
+        static long Utc(string s)
+        {
+            int[] f = Fields(s);
+            return Dates.Utc(f[0], f[1], f[2], f[3], f[4], f[5], 0);
+        }
+
+        static long Local(TimeZoneInfo tz, string s)
+        {
+            int[] f = Fields(s);
+            return At(tz, f[0], f[1], f[2], f[3], f[4]);
+        }
+
+        static IEnumerable<JObj> Each(JObj o, string key)
+        {
+            foreach (object c in o.Arr(key)) yield return (JObj)c;
+        }
+
+        static void DateCases(JObj d)
+        {
+            foreach (JObj c in Each(d, "parse"))
+                Check(Dates.Parse(c.Str("in")) == (c.IsNull("utc") ? 0 : Utc(c.Str("utc"))), "dates: " + c.Str("name"));
+            foreach (JObj c in Each(d, "ago"))
+                Check(Dates.Ago(Utc(c.Str("when")), Utc(c.Str("now"))) == c.Str("expect"), "dates: " + c.Str("name"));
+            foreach (JObj c in Each(d, "reading_time"))
+                Check(Dates.ReadingTime(c.Int("words")) == c.Str("expect"), "dates: " + c.Str("name"));
+        }
+
+        /// <summary>The cases name IANA zones (the TV's); windows_zones maps them to Windows ids.</summary>
+        static TimeZoneInfo Zone(JObj s, JObj c)
+        {
+            string id = s.Obj("windows_zones").Str(c.Str("zone"));
+            try { return id == null ? null : TimeZoneInfo.FindSystemTimeZoneById(id); }
+            catch (Exception) { return null; }
+        }
+
+        static bool Near(long got, long want, JObj c)
+        {
+            return Math.Abs(got - want) < c.Int("tolerance_minutes") * 60000L;
+        }
+
+        static void SunCases(JObj s)
+        {
+            foreach (string group in new[] { "dark", "next_change", "next_sunrise", "turns_within_a_day" })
+                foreach (JObj c in Each(s, group))
+                {
+                    string name = "sun: " + c.Str("name");
+                    TimeZoneInfo tz = Zone(s, c);
+                    if (tz == null) { Console.WriteLine("skip  " + name + " (no zone " + c.Str("zone") + " here)"); continue; }
+                    long at = Local(tz, c.Str("local"));
+                    if (group == "dark") Check(Sun.Dark(at, tz) == c.Bool("dark"), name);
+                    else if (group == "next_change") Check(Near(Sun.NextChange(at, tz), Local(tz, c.Str("expect")), c), name);
+                    else if (group == "next_sunrise") Check(Near((long)Sun.Next(at, tz, true), Local(tz, c.Str("expect")), c), name);
+                    else
+                    {
+                        long next = Sun.NextChange(at, tz);
+                        Check(next > at && next - at <= 24 * 3600000L, name);
+                    }
+                }
+        }
+
         static int Main()
         {
             // JSON
@@ -38,32 +120,14 @@ namespace Broadsheet
             try { Json.Parse("{\"a\":}"); } catch (FormatException) { threw = true; }
             Check(threw, "json rejects bad input");
 
-            // Dates
-            Check(Dates.Parse("2026-11-22T14:03:00Z") == Dates.Utc(2026, 11, 22, 14, 3, 0, 0), "iso date");
-            Check(Dates.Parse("2026-11-22T14:03:00.123-05:00") == Dates.Utc(2026, 11, 22, 19, 3, 0, 0), "iso with offset");
-            Check(Dates.Parse("Sun, 22 Nov 2026 14:03:00 GMT") == Dates.Utc(2026, 11, 22, 14, 3, 0, 0), "rfc 822");
-            Check(Dates.Parse("garbage") == 0, "bad date is 0");
-            long now = Dates.Utc(2026, 11, 23, 12, 0, 0, 0);
-            Check(Dates.Ago(now - 30000, now) == "Just now", "just now");
-            Check(Dates.Ago(now - 12 * 60000, now) == "12m ago", "minutes ago");
-            Check(Dates.Ago(now - 3 * 3600000L, now) == "3h ago", "hours ago");
-            Check(Dates.Ago(now - 30 * 3600000L, now) == "Yesterday", "yesterday");
-            Check(Dates.Ago(Dates.Utc(2025, 7, 18, 12, 0, 0, 0), now) == "Jul 18, 2025", "last year");
-            Check(Dates.ReadingTime(1000) == "4 min read", "reading time");
-
-            // Sun: New York, 23 November 2026: sunrise 6:53, sunset 16:31 (timeanddate.com).
-            TimeZoneInfo ny = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
-            Check(Sun.Dark(At(ny, 2026, 11, 23, 6, 30), ny), "dark before sunrise");
-            Check(!Sun.Dark(At(ny, 2026, 11, 23, 7, 15), ny), "light after sunrise");
-            Check(!Sun.Dark(At(ny, 2026, 11, 23, 16, 20), ny), "light before sunset");
-            Check(Sun.Dark(At(ny, 2026, 11, 23, 16, 45), ny), "dark after sunset");
-            long noon = At(ny, 2026, 11, 23, 12, 0);
-            Check(Math.Abs(Sun.NextChange(noon, ny) - At(ny, 2026, 11, 23, 16, 31)) < 6 * 60000L, "next change from noon is sunset");
-            Check(Math.Abs(Sun.NextChange(At(ny, 2026, 11, 23, 22, 0), ny) - At(ny, 2026, 11, 24, 6, 54)) < 6 * 60000L, "next change at night is sunrise");
-            Check(Math.Abs(Sun.Next(noon, ny, true) - At(ny, 2026, 11, 24, 6, 54)) < 6 * 60000L, "next sunrise");
-            TimeZoneInfo chatham = null;
-            try { chatham = TimeZoneInfo.FindSystemTimeZoneById("Chatham Islands Standard Time"); } catch (Exception) { }
-            if (chatham != null) Check(Sun.NextChange(noon, chatham) - noon <= 24 * 3600000L, "unlisted zone still turns");
+            // Dates and Sun: the shared cases in spec/cases, the same files the TV app's tests read.
+            string cases = CasesDir();
+            Check(cases != null, "found spec/cases");
+            if (cases != null)
+            {
+                DateCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "dates.json"))));
+                SunCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sun.json"))));
+            }
 
             // Stories as the relay sends them
             JObj a = Json.ParseObject("{\"id\":\"A1\",\"title\":\"Headline\",\"excerpt\":\"\",\"channel\":{\"id\":\"T1\",\"name\":\"NPR\"},"

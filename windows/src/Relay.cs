@@ -57,7 +57,7 @@ namespace Broadsheet
 
         public bool Known { get { return baseUrl != null; } }
 
-        public static string ConfigPath { get { return Path.Combine(Paths.Roaming, "relay.conf"); } }
+        public static string ConfigPath { get { return Path.Combine(Paths.Roaming, "relay.conf"); } }  // feature: relay.conf
 
         void ReadConfig()
         {
@@ -98,7 +98,7 @@ namespace Broadsheet
         /// Knocks on port 8787 of every address in this machine's subnets (a /24 each at most), 32 at a
         /// time, and asks whatever answers whether it is the relay. Gives up after 10 s.
         /// </summary>
-        public void Discover(Done<string> done)
+        public void Discover(Done<string> done)  // feature: relay.subnet
         {
             int finished = 0;
             Action<string, string> found = (url, how) =>

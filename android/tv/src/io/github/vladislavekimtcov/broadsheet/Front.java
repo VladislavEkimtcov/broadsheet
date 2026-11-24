@@ -425,6 +425,19 @@ final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
+        int key = e.getKeyCode();
+        if (key == KeyEvent.KEYCODE_BACK || key == KeyEvent.KEYCODE_ESCAPE) {  // feature: front.back
+            // One step per press, on the press: a held key or its release doesn't take another.
+            if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                if (e.getRepeatCount() > 0) return backTaken || super.dispatchKeyEvent(e);
+                backTaken = stepBack();
+                if (backTaken) return true;
+            } else if (backTaken) {
+                backTaken = false;
+                return true;
+            }
+            return super.dispatchKeyEvent(e);  // top of the rail: Android's Back leaves the app
+        }
         View f = findFocus();
         if (f instanceof RailItem && e.getAction() == KeyEvent.ACTION_DOWN) {
             int k = e.getKeyCode();
@@ -436,6 +449,28 @@ final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  
             }
         }
         return super.dispatchKeyEvent(e);
+    }
+
+    /** True while a Back press was taken here, so its release is too. */
+    private boolean backTaken;
+
+    /**
+     * Back on the front page walks out a step at a time: from a story to its section on the
+     * rail, from the rail to its top entry, and from there out of the app (false: not taken).
+     */
+    private boolean stepBack() {
+        if (sections.isEmpty() || railItems.isEmpty()) return false;
+        View f = findFocus();
+        if (f instanceof RailItem) {
+            if (((RailItem) f).index == 0) return false;
+            removeCallbacks(switchSection);
+            railItems.get(0).requestFocus();  // switches section after the rail's pause
+            return true;
+        }
+        int at = current >= 0 && current < railItems.size() ? current : 0;
+        railItems.get(at).requestFocus();
+        page.smoothScrollTo(0, 0);
+        return true;
     }
 
     /** A section name on the rail. Focus switches section after a pause. */

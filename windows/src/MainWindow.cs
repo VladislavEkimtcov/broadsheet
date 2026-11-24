@@ -1442,6 +1442,12 @@ namespace Broadsheet
                 e.Handled = true;
                 return;
             }
+            if (k == Key.Back || k == Key.BrowserBack || k == Key.Escape)
+            {
+                if (!e.IsRepeat) front.OnBack();  // one step per press
+                e.Handled = true;
+                return;
+            }
             e.Handled = front.OnKey(k);
         }
     }

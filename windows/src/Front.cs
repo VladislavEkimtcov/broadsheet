@@ -562,6 +562,23 @@ namespace Broadsheet
             return false;
         }
 
+        /// <summary>Back (Backspace, Esc, the mouse's back button) walks out of the front page a step at
+        /// a time: from a story to its section on the rail, then to the rail's top entry. The window
+        /// stays open at the top. True if it took a step.</summary>
+        public bool OnBack()  // feature: front.back
+        {
+            if (sections.Count == 0 || railItems.Count == 0) return false;
+            if (railFocus == 0) return false;
+            if (railFocus > 0)
+            {
+                FocusRail(0, true);
+                return true;
+            }
+            FocusRail(current >= 0 && current < railItems.Count ? current : 0, false);
+            page.ScrollTo(0, true);
+            return true;
+        }
+
         /// <summary>The card a D-pad press would move to: nearest in that direction, favouring the same row or column.</summary>
         Card Nearest(Card from, Key k)
         {

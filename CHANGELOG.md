@@ -7,6 +7,10 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Windows: **videos play inside the app**, HLS included (30 of the last 31 videos in the relay were
+  HLS). Windows' own player (WinRT `MediaPlayer`, `AdaptiveMediaSource` for HLS) replaces WPF's
+  MediaElement, which couldn't open HLS and crashed on Windows 10 IoT LTSC. Still nothing to
+  install and no libraries.
 - Windows: `install.ps1` waits for a running Broadsheet to close before copying the new exe
   (it could fail with "file in use" when updating over a running copy).
 

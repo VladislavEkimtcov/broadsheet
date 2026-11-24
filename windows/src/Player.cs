@@ -9,9 +9,9 @@ using System.Windows.Threading;
 namespace Broadsheet
 {
     /// <summary>
-    /// A story's video, full window, with WPF's MediaElement (Windows Media Foundation, in the box
-    /// with the MediaPlayback feature). MP4 plays here; an HLS stream (.m3u8) that Media Foundation
-    /// can't open is handed to the default browser instead, so it still plays.
+    /// A story's video, full window. Windows' own player decodes it (HLS or MP4, see Video) and
+    /// the frames are drawn into an Image here, under the controls. When it can't play, Enter
+    /// hands the video to the default browser instead, so it still plays.
     ///
     /// Keys: Space/Enter pause and resume, Left/Right 10 s, Page Up/Down 30 s, Esc closes. Clicking
     /// pauses; the controls hide after a few seconds of playing.
@@ -24,7 +24,8 @@ namespace Broadsheet
         }
 
         readonly IListener listener;
-        readonly MediaElement media = new MediaElement();
+        readonly Image picture = new Image();
+        Video video;
         readonly StackPanel controls = new StackPanel();
         readonly TextBlock title, time, hint, status;
         readonly Border bar, barFill;
@@ -38,18 +39,10 @@ namespace Broadsheet
             this.listener = listener;
             Background = Brushes.Black;
             Visibility = Visibility.Collapsed;
-            media.LoadedBehavior = MediaState.Manual;
-            media.UnloadedBehavior = MediaState.Close;
-            media.Stretch = Stretch.Uniform;
-            media.MediaOpened += (s, e) =>
-            {
-                opened = true;
-                status.Visibility = Visibility.Collapsed;
-                ShowControls();
-            };
-            media.MediaEnded += (s, e) => Close();
-            media.MediaFailed += (s, e) => { reason = e.ErrorException != null ? e.ErrorException.Message : null; Failed(); };
-            Children.Add(media);
+            picture.Stretch = Stretch.Uniform;
+            RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.Linear);
+            Children.Add(picture);
+            SizeChanged += (s, e) => Target();
 
             status = new TextBlock
             {
@@ -70,9 +63,9 @@ namespace Broadsheet
             bar = new Border { Height = 4, Background = new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)), Margin = new Thickness(48, 18, 48, 0), Child = barFill, Cursor = Cursors.Hand };
             bar.MouseLeftButtonUp += (s, e) =>
             {
-                if (!opened || !media.NaturalDuration.HasTimeSpan) return;
+                if (!opened || video == null || video.Duration <= TimeSpan.Zero) return;
                 double f = e.GetPosition(bar).X / Math.Max(1, bar.ActualWidth);
-                media.Position = TimeSpan.FromSeconds(media.NaturalDuration.TimeSpan.TotalSeconds * f);
+                video.Position = TimeSpan.FromSeconds(video.Duration.TotalSeconds * f);
                 e.Handled = true;
                 Update();
             };
@@ -96,7 +89,7 @@ namespace Broadsheet
             };
             // A stream Media Foundation can't open sometimes never says so: give it 15 s.
             wait = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-            wait.Tick += (s, e) => { wait.Stop(); if (!opened && !failed && IsPlaying) Failed(); };
+            wait.Tick += (s, e) => { wait.Stop(); if (!opened && !failed && IsPlaying) { reason = "it didn't start within 15 s"; Failed(); } };
             MouseMove += (s, e) => { if (IsPlaying) ShowControls(); };
             MouseLeftButtonUp += (s, e) => { if (IsPlaying) Toggle(); };
         }
@@ -114,51 +107,86 @@ namespace Broadsheet
             Visibility = Visibility.Visible;
             controls.Visibility = Visibility.Visible;
             Cursor = null;
-            try
+            picture.Source = null;
+            Stop();
+            video = new Video(Dispatcher);
+            Video v = video;
+            v.Opened += () =>
             {
-                media.Source = new Uri(stream);
-                media.Play();
-                playing = true;
-                wait.Stop();
-                wait.Start();
-            }
-            catch (Exception e)
+                if (v != video) return;
+                opened = true;
+                ShowControls();
+            };
+            v.FrameShown += () =>
             {
-                reason = e.Message;
-                Failed();
-            }
+                if (v != video) return;
+                if (picture.Source != v.Bitmap) picture.Source = v.Bitmap;
+                if (status.Visibility == Visibility.Visible && opened && !failed) status.Visibility = Visibility.Collapsed;
+            };
+            v.Ended += () => { if (v == video) Close(); };
+            v.Failed += r => { if (v == video) { reason = r; Failed(); } };
+            Target();
+            playing = true;
+            wait.Stop();
+            wait.Start();
+            v.Open(stream);
             Update();
+        }
+
+        /// <summary>Frames no bigger than the player is on screen, in device pixels.</summary>
+        void Target()
+        {
+            if (video == null) return;
+            PresentationSource src = PresentationSource.FromVisual(this);
+            double sx = 1, sy = 1;
+            if (src != null && src.CompositionTarget != null)
+            {
+                sx = src.CompositionTarget.TransformToDevice.M11;
+                sy = src.CompositionTarget.TransformToDevice.M22;
+            }
+            double w = ActualWidth > 0 ? ActualWidth : SystemParameters.PrimaryScreenWidth;
+            double h = ActualHeight > 0 ? ActualHeight : SystemParameters.PrimaryScreenHeight;
+            video.SetTarget((int)Math.Ceiling(w * sx), (int)Math.Ceiling(h * sy));
+        }
+
+        void Stop()
+        {
+            if (video == null) return;
+            Video v = video;
+            video = null;
+            v.Dispose();
         }
 
         void Failed()
         {
             failed = true;
             playing = false;
-            media.Close();
+            wait.Stop();
+            Stop();
+            picture.Source = null;
             status.Visibility = Visibility.Visible;
-            status.Text = (url != null && url.Contains(".m3u8")
-                ? "Windows can't stream this video (HLS) by itself."
-                : "This video won't play here.") + (reason != null ? "\n(" + reason.Trim() + ")" : "") + "\n\nEnter opens it in your web browser  ·  Esc goes back to the story";
+            status.Text = "This video won't play here." + (reason != null ? "\n(" + reason.Trim() + ")" : "") + "\n\nEnter opens it in your web browser  ·  Esc goes back to the story";
             controls.Visibility = Visibility.Collapsed;
             Cursor = null;
         }
 
         void Toggle()
         {
-            if (!opened) return;
-            if (playing) media.Pause();
-            else media.Play();
+            if (!opened || video == null) return;
+            if (playing) video.Pause();
+            else video.Play();
             playing = !playing;
             ShowControls();
         }
 
         void Seek(double seconds)
         {
-            if (!opened) return;
-            TimeSpan p = media.Position + TimeSpan.FromSeconds(seconds);
+            if (!opened || video == null) return;
+            TimeSpan p = video.Position + TimeSpan.FromSeconds(seconds);
             if (p < TimeSpan.Zero) p = TimeSpan.Zero;
-            if (media.NaturalDuration.HasTimeSpan && p > media.NaturalDuration.TimeSpan) p = media.NaturalDuration.TimeSpan;
-            media.Position = p;
+            TimeSpan d = video.Duration;
+            if (d > TimeSpan.Zero && p > d) p = d;
+            video.Position = p;
             ShowControls();
         }
 
@@ -180,10 +208,11 @@ namespace Broadsheet
 
         void Update()
         {
-            TimeSpan pos = opened ? media.Position : TimeSpan.Zero;
-            bool known = opened && media.NaturalDuration.HasTimeSpan;
-            TimeSpan dur = known ? media.NaturalDuration.TimeSpan : TimeSpan.Zero;
-            time.Text = (playing ? "" : "Paused  ·  ") + Clock(pos) + (known ? " / " + Clock(dur) : "");
+            bool live = opened && video != null;
+            TimeSpan pos = live ? video.Position : TimeSpan.Zero;
+            TimeSpan dur = live ? video.Duration : TimeSpan.Zero;
+            bool known = dur > TimeSpan.Zero;
+            time.Text = (!playing ? "Paused  ·  " : live && video.Buffering ? "Loading  ·  " : "") + Clock(pos) + (known ? " / " + Clock(dur) : "");
             hint.Text = "Space pause  ·  ◀ ▶ 10 s  ·  Esc back";
             barFill.Width = known && dur.TotalSeconds > 0 ? bar.ActualWidth * Math.Min(1, pos.TotalSeconds / dur.TotalSeconds) : 0;
         }
@@ -194,9 +223,8 @@ namespace Broadsheet
             tick.Stop();
             hide.Stop();
             wait.Stop();
-            media.Stop();
-            media.Close();
-            media.Source = null;
+            Stop();
+            picture.Source = null;
             playing = false;
             Visibility = Visibility.Collapsed;
             listener.OnPlayerClosed();

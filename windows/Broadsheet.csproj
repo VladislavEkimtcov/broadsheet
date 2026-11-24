@@ -26,6 +26,14 @@
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
+    <!-- Windows' own video player (WinRT) for Video.cs: the metadata every Windows 10 and 11 has
+         in System32\WinMetadata, and the .NET Framework's WinRT interop, both in the box. -->
+    <Reference Include="System.Runtime"><HintPath>$(MSBuildToolsPath)\System.Runtime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Runtime.WindowsRuntime"><HintPath>$(MSBuildToolsPath)\System.Runtime.WindowsRuntime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="System.Runtime.InteropServices.WindowsRuntime"><HintPath>$(MSBuildToolsPath)\System.Runtime.InteropServices.WindowsRuntime.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Windows.Foundation"><HintPath>$(WINDIR)\System32\WinMetadata\Windows.Foundation.winmd</HintPath><Private>false</Private></Reference>
+    <Reference Include="Windows.Media"><HintPath>$(WINDIR)\System32\WinMetadata\Windows.Media.winmd</HintPath><Private>false</Private></Reference>
+    <Reference Include="Windows.Graphics"><HintPath>$(WINDIR)\System32\WinMetadata\Windows.Graphics.winmd</HintPath><Private>false</Private></Reference>
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
@@ -53,6 +61,7 @@
     <Compile Include="src\Front.cs" />
     <Compile Include="src\Reader.cs" />
     <Compile Include="src\Options.cs" />
+    <Compile Include="src\Video.cs" />
     <Compile Include="src\Player.cs" />
     <Compile Include="src\MainWindow.cs" />
   </ItemGroup>

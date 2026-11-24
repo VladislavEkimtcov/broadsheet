@@ -63,7 +63,7 @@ renumbered when the ports started sharing one version).
 | `reader.prev_next` | Left/Right: previous/next story | ✅ | ⚠️ 0.4.0 | ✅ | Phone: a sideways swipe (`phone.swipe`) |
 | `reader.page_keys` | A page at a time | ✅ | — | ✅ | TV: Fast-forward/Rewind. Windows: Space/Page Down/Page Up. Phone: no page keys; it scrolls and flings with a finger |
 | `win.paragraphs` | Paragraphs split on line breaks in the relay's text | — | — | ✅ | Windows only, on the owner's request (was in MainWindow.cs's divergence note) |
-| `video.inline` | A story's video plays inside the app, full screen; Left/Right 10 s, OK pause | ✅ | ✅ 0.4.0 | ⚠️ | Windows: MediaElement where Windows' media stack can; HLS, or images where MediaElement crashes (DOORWEDGE's IoT image), open in the browser on Enter. Phone: a tap plays it full screen without the system bars; tap pauses, tap on the line seeks |
+| `video.inline` | A story's video plays inside the app, full screen; Left/Right 10 s, OK pause | ✅ | ✅ 0.4.0 | ⚠️ | Windows: Windows' own WinRT MediaPlayer (HLS via AdaptiveMediaSource, and MP4) since Unreleased, replacing MediaElement (no HLS, crashed on DOORWEDGE's IoT image); stays ⚠️ until checked on screen on DOORWEDGE (decoding verified there headless, sound not yet). Enter opens it in the browser if it still fails. Phone: a tap plays it full screen without the system bars; tap pauses, tap on the line seeks |
 
 ## Options panel (☰ Menu)
 

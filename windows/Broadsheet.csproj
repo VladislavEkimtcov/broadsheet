@@ -34,6 +34,7 @@
     </ApplicationDefinition>
     <Compile Include="src\App.xaml.cs"><DependentUpon>App.xaml</DependentUpon></Compile>
     <Compile Include="src\AssemblyInfo.cs" />
+    <Compile Include="$(IntermediateOutputPath)Version.cs" />
     <Compile Include="src\Json.cs" />
     <Compile Include="src\Net.cs" />
     <Compile Include="src\Dates.cs" />
@@ -62,4 +63,21 @@
     </Resource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- One version for every port: VERSION_NAME in ..\version.env (the Android build reads it too)
+       becomes the assembly and file version. Property functions and WriteLinesToFile are in
+       MSBuild 4.0, so this needs nothing beyond what Windows ships. -->
+  <PropertyGroup>
+    <VersionFile>$(MSBuildProjectDirectory)\..\version.env</VersionFile>
+  </PropertyGroup>
+  <Target Name="StampVersion" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(VersionFile)')" Text="$(VersionFile) is missing: copy version.env next to windows\ (with assets\ and spec\)." />
+    <PropertyGroup>
+      <VersionText>$([System.IO.File]::ReadAllText('$(VersionFile)'))</VersionText>
+      <VersionName>$([System.Text.RegularExpressions.Regex]::Match('$(VersionText)', '(?&lt;=VERSION_NAME=)[0-9]+\.[0-9]+\.[0-9]+'))</VersionName>
+    </PropertyGroup>
+    <Error Condition="'$(VersionName)' == ''" Text="No VERSION_NAME=X.Y.Z in $(VersionFile)" />
+    <WriteLinesToFile File="$(IntermediateOutputPath)Version.cs" Overwrite="true"
+      Lines="// Made by the build from version.env;[assembly: System.Reflection.AssemblyVersion(&quot;$(VersionName).0&quot;)];[assembly: System.Reflection.AssemblyFileVersion(&quot;$(VersionName).0&quot;)];[assembly: System.Reflection.AssemblyInformationalVersion(&quot;$(VersionName)&quot;)]" />
+    <Message Importance="high" Text="Broadsheet $(VersionName)" />
+  </Target>
 </Project>

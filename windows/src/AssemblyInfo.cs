@@ -6,7 +6,6 @@ using System.Windows;
 [assembly: AssemblyDescription("Apple News on Windows, by way of Apple News Relay on a Mac")]
 [assembly: AssemblyProduct("Broadsheet for Windows")]
 [assembly: AssemblyCopyright("MIT License")]
-[assembly: AssemblyVersion("0.2.0.0")]
-[assembly: AssemblyFileVersion("0.2.0.0")]
+// AssemblyVersion and AssemblyFileVersion come from ..\version.env (obj\Version.cs, made by the build).
 [assembly: ComVisible(false)]
 [assembly: ThemeInfo(ResourceDictionaryLocation.None, ResourceDictionaryLocation.SourceAssembly)]

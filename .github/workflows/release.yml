@@ -1,0 +1,125 @@
+# Builds every port and publishes them on the Releases page.
+#   git tag push vX.Y.Z (tools/release.sh does it): tests, builds, a GitHub release with
+#     broadsheet.apk, broadsheet-windows.zip and SHA256SUMS.txt (stable names, so
+#     releases/latest/download/broadsheet.apk always works) and the CHANGELOG section as notes.
+#   workflow_dispatch: a dry run; the same builds, uploaded as workflow artifacts, no release.
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.v.outputs.name }}
+      code: ${{ steps.v.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        name: version.env, and the tag must match it
+        run: |
+          source version.env
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          if [[ $GITHUB_REF_TYPE == tag && $GITHUB_REF_NAME != "v$VERSION_NAME" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match VERSION_NAME=$VERSION_NAME in version.env"
+            exit 1
+          fi
+          grep -q "^## $VERSION_NAME\$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $VERSION_NAME' section"; exit 1; }
+
+  android:
+    needs: [tests, version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Android SDK parts
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-25" "build-tools;34.0.0" > /dev/null
+      - name: Build and sign with the release key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYPASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          [[ -n $KEYSTORE_B64 && -n $KEYPASS ]] || { echo "::error::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD secrets missing"; exit 1; }
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          BUILD_TOOLS=34.0.0 KEYSTORE="$RUNNER_TEMP/release.keystore" KEYPASS="$KEYPASS" android/build.sh
+          rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Signed with the pinned key, and the version is the tag's
+        run: |
+          BT=$ANDROID_HOME/build-tools/34.0.0
+          got=$("$BT/apksigner" verify --print-certs android/build/broadsheet.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          want=$(tr -d ' \n' < android/signing-cert.sha256)
+          echo "certificate $got"
+          [[ $got == "$want" ]] || { echo "::error::APK signed with $got, expected $want (android/signing-cert.sha256)"; exit 1; }
+          badging=$("$BT/aapt2" dump badging android/build/broadsheet.apk | head -1)
+          echo "$badging"
+          [[ $badging == *"versionName='${{ needs.version.outputs.name }}'"* ]] || { echo "::error::versionName mismatch"; exit 1; }
+          [[ $badging == *"versionCode='${{ needs.version.outputs.code }}'"* ]] || { echo "::error::versionCode mismatch"; exit 1; }
+          cp android/build/broadsheet.apk broadsheet.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: broadsheet.apk
+          if-no-files-found: error
+
+  windows:
+    needs: [tests, version]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the in-box toolchain and test
+        shell: cmd
+        run: windows\build.cmd test
+      - name: Version check and zip
+        shell: pwsh
+        run: |
+          $want = "${{ needs.version.outputs.name }}.0"
+          $got = (Get-Item windows\bin\Broadsheet.exe).VersionInfo.FileVersion
+          "Broadsheet.exe FileVersion $got"
+          if ($got -ne $want) { throw "FileVersion $got, expected $want" }
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item windows\bin\Broadsheet.exe, windows\install.ps1 dist\
+          Copy-Item windows\README-release.txt dist\README.txt
+          Compress-Archive -Path dist\* -DestinationPath broadsheet-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: broadsheet-windows.zip
+          if-no-files-found: error
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: [version, android, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Checksums and notes
+        run: |
+          sha256sum broadsheet.apk broadsheet-windows.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          v=${{ needs.version.outputs.name }}
+          awk -v h="## $v" '$0 == h {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          cat >> notes.md <<NOTES
+
+          **Downloads:** \`broadsheet.apk\` for Android phones, Android TV, Fire TV and Google TV; \`broadsheet-windows.zip\` for Windows 10/11 (unzip, then \`powershell -ExecutionPolicy Bypass -File install.ps1\`). Both need [Apple News Relay](https://github.com/VladislavEkimtcov/apple-news-relay) running on a Mac on the same network.
+          NOTES
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" broadsheet.apk broadsheet-windows.zip SHA256SUMS.txt \
+            --title "Broadsheet ${{ needs.version.outputs.name }}" --notes-file notes.md --verify-tag --latest

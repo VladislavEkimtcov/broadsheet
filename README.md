@@ -1,68 +1,57 @@
-# Broadsheet: Apple News on Android TV and Fire TV
+# Broadsheet: Apple News on Android, Fire TV and Windows
 
-**A news reader for the TV, built for the remote.** Broadsheet shows your Apple News (Today's
-Top Stories, For You, Trending, your topics and channels, Saved Stories) on an Android TV or
-Fire TV, and reads whole articles in a calm, newspaper-style reader. No ads, no touch, no
-account on the TV.
+**Read Apple News on an Android phone, Fire TV, Android TV, Google TV or a Windows PC.** Apple
+News has no Android app, no Windows app and no reader API, so Broadsheet gets your news from a
+Mac: [**Apple News Relay**](https://github.com/VladislavEkimtcov/apple-news-relay), a small
+server that runs next to the News app and turns it into a local JSON API. Broadsheet shows
+your Apple News (Today's Top Stories, For You, Trending, your topics and channels, Saved
+Stories) with a newspaper-style front page and a calm serif reader. No ads, no account on the
+device, nothing sent anywhere but your own Mac.
 
-Apple News has no Android app and no reader API, so Broadsheet gets the news from
-[**Apple News Relay**](https://github.com/VladislavEkimtcov/apple-news-relay), a small server
-that runs on your Mac and turns the News app into a local JSON API. The TV finds the relay on
-your network by itself.
+**You need a Mac** with Apple News, running Apple News Relay on the same network. Broadsheet
+is an unofficial reader; it is not affiliated with Apple.
 
-![Broadsheet's front page on a TV, light by day: a rail of sections on the left, a hero story, two briefs and a row of picture cards](docs/front-page.jpg)
-
-- **Front page:** a rail of sections on the left; a hero story, two briefs and rows of picture
-  cards. Moving along the rail skims sections; cached pages open instantly. The hero's words sit
-  over its picture: the card measures how light the picture is under them (after its shade) and,
-  where light type would fade into it, sets each line on a dark block.
-- **Reader:** a single column of serif type (Newsreader, SIL OFL), pictures with captions, quotes
-  and subheads. The headline, summary and picture show at once; the body follows, fetched from
-  Apple News on the Mac if it wasn't there yet (usually in a quarter of a second). While it's on
-  its way, a band at the bottom says what the Mac is doing, with a running bar and the press room
-  at work ("Inking the plates…"), and grey lines wait where the text will be set. Resting on a
-  card for a moment, or reading a story, has the Mac fetch that story or the next one ahead.
-  Reopening a story goes back to where you left it.
-- **Video:** a story's video is selected when it scrolls into view; OK plays it full screen,
-  streamed straight from the publisher (Left/Right 10 s, OK pause, Back to the story).
-- **Options (☰ Menu):** a panel slides in from the right, over the front page or a story, in the
-  rail's square style. It acts on the story being read, or on the focused card:
-  - **On the Mac** (like Handoff): when you're reading a story in Apple News on the Mac, or were
-    in the last half hour, it's at the top of the panel; OK carries on with it on the TV.
-  - **Save story** to Saved Stories on the Mac, or take it out again.
-  - **Mark as unread** (or as read): a story read on the TV stops being dimmed or hidden.
-  - **Like or dislike**: Apple News's *Suggest More / Fewer Stories Like This*. OK on the same one
-    takes it back.
-  - **More from** the publisher, **More on** one of the story's topics, or **Related stories**,
-    as a new section at the top of the rail. The Mac loads more of the channel in the background.
-  - **Text size** on a slider of ten steps, from 14 pt for close reading to 40 pt for across the
-    room (the column widens for the big sizes), **Appearance** (automatic, dark, light), **Stories you've read**
-    (show, dim or hide them), **Continue reading** the last unfinished story, **Refresh now** and
-    how often to refresh by itself.
-  - The footer says whether the Mac is answering and how much it has to do.
-- **Light by day, dark at night:** in Automatic, the page turns light at sunrise and dark at
-  sunset. The TV works out both offline from its time zone (the USNO sunrise equation, as dumbtv's
-  quick settings do), with no location permission.
-- **D-pad only:** Down/OK reads on (OK at the end opens the next story), Up goes back, Left/Right
-  the previous/next story, Fast-forward/Rewind a page, Menu the options, Back the front page.
-- **No ads:** the relay removes ad slots, sponsored stories and publisher promotions.
-- **Apple News+:** whole stories when the Mac's account has Apple News+; otherwise the opening,
-  clearly marked.
-- **Light on a small TV box:** one view per card, pictures decoded at the size shown and dropped
-  when far off screen, nothing animating at rest (0 frames and about 1 ms of CPU a second while
-  idle, measured on the TV, panel open or not).
-- **Private:** what you read, how far, and your likes stay on the TV (`library.json` in the app's
-  files). The Mac only learns what the TV asks of it.
-
-![The options panel over the front page: Like or dislike with thumb icons, Mark as unread, More from NBC News, and the text size slider at 18.5 pt](docs/options.jpg)
-
-![The same front page after sunset, in the dark theme](docs/front-page-dark.jpg)
-
-![The reader: dateline, headline, byline, standfirst and the lead picture in a single serif column](docs/reader.jpg)
-
-| | |
+| Fire TV and Android TV | Windows |
 |---|---|
-| ![A video in a story, selected as it scrolled into view: a ring and a red "Play video OK" label](docs/video.jpg) | ![A story on its way: the band at the bottom says "Asking the Mac for the story… 4 s" over a red bar, with "Running the press…" on the right](docs/loading.jpg) |
+| ![Apple News on Fire TV: Broadsheet's front page on a TV, with a rail of sections, a hero story, two briefs and picture cards](docs/tv/front-page.jpg) | Windows screenshots are on their way. |
+
+## Downloads
+
+| | Download | Runs on |
+|---|---|---|
+| Android | [**broadsheet.apk**](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet.apk) | Fire TV, Android TV, Google TV (D-pad remote); Android phones from 0.4.0. Android 7.1 or later |
+| Windows | [**broadsheet-windows.zip**](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet-windows.zip) | Windows 10 and 11 (IoT Enterprise LTSC too), .NET Framework 4.8 (built in) |
+
+These links always point at the [latest release](https://github.com/VladislavEkimtcov/broadsheet/releases/latest);
+`SHA256SUMS.txt` there has the checksums. Every port carries the same version number.
+
+- **Android:** open the APK on the device. The first time, Android asks to let your browser
+  (or file manager) *install unknown apps*: allow it, then *Install*. On a Fire TV, sideload it
+  with the *Downloader* app (Settings → My Fire TV → Developer options → Install unknown apps),
+  or `adb install -r broadsheet.apk`. Updates install over the old version.
+- **Windows:** if Windows blocked the download, right-click the zip → Properties → *Unblock*,
+  then unzip and run `powershell -ExecutionPolicy Bypass -File install.ps1` (Start menu entry,
+  no admin rights). Running `Broadsheet.exe` directly works too; if SmartScreen says "Windows
+  protected your PC", choose *More info* → *Run anyway*.
+
+## Apple News on Fire TV and Android TV
+
+A front page and reader built for the remote: a rail of sections on the left, a hero, briefs and
+rows of picture cards, an options panel on the Menu key (save, like or dislike, more from the
+publisher, text size from 14 to 40 pt, light by day and dark after sunset), videos in stories,
+and *On the Mac*, which carries on with the story open in Apple News on the Mac. Details and
+screenshots: [android/README.md](android/README.md).
+
+## Apple News on Android phones
+
+The same APK runs on Android phones and tablets with a touch UI from 0.4.0. Until then a phone
+shows the TV's UI.
+
+## Apple News on Windows
+
+A Windows desktop port with the same front page, reader and options, for mouse, touchpad and
+keyboard: one `Broadsheet.exe` that runs on what ships with Windows. Details:
+[windows/README.md](windows/README.md).
 
 ## Setup
 
@@ -71,89 +60,81 @@ your network by itself.
    git clone https://github.com/VladislavEkimtcov/apple-news-relay.git && cd apple-news-relay
    python3 -m apple_news_relay serve --host 0.0.0.0 --allow 127.0.0.1,192.168.1.0/24
    ```
-2. Install Broadsheet on the TV (see [Build](#build)), open **News**. It finds the relay with
-   Bonjour (`_newsrelay._tcp`), and where Bonjour doesn't get through (common between Wi-Fi and
-   wired networks, or with a VPN app on the TV) by asking port 8787 on its own subnet. Until it
-   finds one it tries again every 30 seconds; OK tries at once.
+2. Install Broadsheet (above) and open it. It finds the relay by itself: Bonjour
+   (`_newsrelay._tcp`) on Android, and on every port a look for port 8787 on its own subnet.
+3. If the relay is on another port or subnet, point the app at it with a `relay.conf`
+   (`url=http://192.168.1.20:8787`; see each port's README for where it goes).
 
-If the relay runs on another port or subnet, point the app at it by hand: put a `relay.conf` in
-the app's files folder
+## Layout
 
 ```
-url=http://192.168.1.20:8787
-# token=...   if the relay was started with --token
+android/     the Android app (Java, bare SDK, no Gradle): one APK for TVs and phones
+  src/         shared by TV and phone: relay client, controller, reader, options, player
+  tv/src/      the TV's front page (rail, D-pad focus)
+  phone/src/   the phone's front page and touch parts (from 0.4.0)
+  tests/       CasesTest.java: the shared cases on the JVM
+windows/     the Windows port (C# 5, WPF, .NET Framework 4.8 in-box toolchain)
+assets/      Newsreader fonts (SIL OFL), read by both builds
+spec/cases/  behaviour both apps must agree on (dates, sunrise, the prefetch ladder, SSE)
+tools/       parity.py, release.sh, art.py, fonts.py
+docs/        screenshots (tv/, phone/, windows/)
+PARITY.md    what each front end does, feature by feature
+CHANGELOG.md release notes, one section per version
+version.env  VERSION_NAME for every port, VERSION_CODE for Android
 ```
+
+The Android app and the Windows port share no code. [PARITY.md](PARITY.md) keeps them in step:
+every feature has a row with a cell for the TV, the phone and Windows, the code is tagged
+`// feature: <id>`, and `tools/parity.py` checks one against the other in CI.
+
+## Building
 
 ```sh
-adb push relay.conf /sdcard/Android/data/io.github.vladislavekimtcov.broadsheet/files/relay.conf
+cd android && ./build.sh && ./test.sh       # android/build/broadsheet.apk; JDK 17 + Android SDK (platforms;android-25)
+python3 tools/parity.py                     # PARITY.md against every front end's code
 ```
 
-## Windows
-
-[`windows/`](windows/README.md) has a Windows desktop port of Broadsheet: the same front page,
-reader and options, with mouse, touchpad and keyboard. It's a single `Broadsheet.exe` that
-builds and runs on a bare Windows 10/11 (IoT Enterprise LTSC included) with what ships in the
-box (.NET Framework 4.8, MSBuild 4.0, C# 5): `windows\build.cmd`. The two apps share no code;
-[PARITY.md](PARITY.md) lists what each one does and where they differ on purpose.
-
-## Build
-
-No Gradle, no libraries: the bare Android SDK and JDK 17.
-
-```sh
-./build.sh                          # build/broadsheet.apk, signed with release.keystore (made on first run)
-adb install -r build/broadsheet.apk
+```bat
+:: on Windows, with nothing installed (needs assets\ spec\ and version.env next to windows\)
+windows\build.cmd test
 ```
 
-`build.sh` needs `platforms;android-25` and any build-tools (34 tested). Keep `release.keystore`
-(it's git-ignored): updates must be signed with the same key. Banner: `python3 tools/art.py`
-(Pillow). Fonts: `python3 tools/fonts.py` (fontTools).
+## Releases
 
-Dates and sunrise/sunset have tests that run on the computer. They read the cases in
-`spec/cases/`, which the Windows port's tests read too:
+One version for every port, in `version.env`. To release: add a `## X.Y.Z` section to
+[CHANGELOG.md](CHANGELOG.md), push it, then run `tools/release.sh X.Y.Z` on an up-to-date
+`main`. It checks parity and the shared cases, bumps `version.env` (the Android version code
+goes up by one), commits "Release X.Y.Z", tags `vX.Y.Z` and pushes. The tag runs
+[`release.yml`](.github/workflows/release.yml): the tests, the APK built and signed with the
+release key (kept in the repository's Actions secrets; the certificate is pinned in
+`android/signing-cert.sha256`), the Windows exe built with the in-box toolchain and zipped, and
+a GitHub release with `broadsheet.apk`, `broadsheet-windows.zip` and `SHA256SUMS.txt`, its
+notes taken from the changelog. Running the workflow by hand is a dry run: the same builds as
+artifacts, no release.
 
-```sh
-P=src/io/github/vladislavekimtcov/broadsheet
-javac -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java tests/CasesTest.java
-java -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest
-python3 tools/parity.py          # PARITY.md against both apps' code
-```
+## FAQ
 
-## How it talks to the relay
+**Is there an Apple News app for Android?** Not from Apple. Broadsheet is an Apple News app for
+Android alternative: it shows the stories from Apple News on your Mac on an Android phone,
+tablet or TV.
 
-| | |
-|---|---|
-| front page | `GET /v1/front`: every section (its first 12 stories), Latest and Saved in one call, with `If-None-Match`; `304` when nothing changed |
-| more of a section | the section's `links.next` (`GET /v1/sections/{id}/articles?cursor=…`), 15 at a time, as focus nears the end |
-| live | `GET /v1/events`: `hello` on connecting, `front.updated` (reload once the remote is still), `article.body_captured`, `job.updated` |
-| a story | `GET /v1/articles/{id}?wait=14&max_chars=2400`: one trip, the Mac fetching it if needed; the first couple of screens |
-| the rest of it | `GET /v1/articles/{id}?fetch=never&from_block=N`, when the reader is within two screens of the loaded end |
-| still fetching | `GET /v1/jobs/{id}?wait=12` (rarely: only when 14 s weren't enough), then the article again |
-| ahead of time | `PUT /v1/interest/{client}`: the stories around the card in focus, a section's first three when resting on it on the rail, the next stories while reading (the relay has Apple News fetch them; the newest list replaces the last); `DELETE` when the app goes to the background |
-| openings ahead | `GET /v1/articles/{id}?fetch=never&max_chars=2400` for the ones the relay already has, kept on the TV |
-| save, unsave | `PUT` / `DELETE /v1/saved/{id}?wait=25` |
-| like, dislike, take back | `PUT /v1/articles/{id}/reaction?reaction=like` / `DELETE` the same |
-| more like this | `GET /v1/channels/{id}/articles`, `/v1/topics/{id}/articles`, `/v1/articles/{id}/related`; then `POST /v1/channels/{id}/refresh` |
-| freshness | `POST /v1/today/refresh?pages=4` every 25 minutes (or hourly, or never); the page follows on `front.updated` |
-| On the Mac | `GET /v1/handoff` |
-| the panel's footer | `GET /v1/status` |
+**Can I get Apple News on Fire TV?** Yes, with Broadsheet: sideload `broadsheet.apk` on a Fire
+TV Stick, Fire TV Cube or Fire TV smart TV. It works the same on Android TV and Google TV.
 
-A relay older than 0.3 gets the 0.2 calls: `/v1/sections`, `/v1/articles`, `/v1/saved`, and
-`POST /v1/articles/{id}/fetch?priority=background` for one story at a time.
+**Can I read Apple News on Windows?** Yes: `broadsheet-windows.zip` has a small Windows app for
+Windows 10 and 11.
 
-Video plays from the URL in the story's `video` block, straight from the publisher's CDN.
+**Do I need an iPhone or a Mac?** A Mac, yes: Apple News Relay runs on a Mac with the News app
+signed in, and Broadsheet reads from it over your home network. An iPhone isn't needed.
 
-On the TV, kept in the app's cache folder: the last front page (so the app opens at once and
-still works for a while if the Mac sleeps), stories opened or headed for (`bodies/`, 8 MB, 400
-stories, two weeks, the least recently opened first out), and pictures (`img/`, 150 MB). Cards
-fetch the picture size they show (750 px wide for a tile, not 2048).
+**Does it show Apple News+ stories?** Whole stories when the Mac's Apple ID has Apple News+;
+otherwise their opening, clearly marked.
 
-## Requirements
-
-Android 7.1 (API 25) or later with a D-pad remote: Fire TV Stick and Cube, Fire TV smart TVs,
-Google TV, Android TV. Built and tuned on a Fire OS 8 (Android 11) TV with a MediaTek MT5896.
+**Does it show ads?** No: the relay leaves out ad slots, sponsored stories and publisher
+promotions.
 
 ## License
 
 MIT. Fonts: Newsreader by Production Type, SIL Open Font License 1.1 (`assets/fonts/OFL.txt`).
-Not affiliated with Apple or Amazon. Stories belong to their publishers.
+Not affiliated with Apple or Amazon; Apple News is a trademark of Apple Inc. Stories belong to
+their publishers.

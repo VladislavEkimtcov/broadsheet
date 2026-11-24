@@ -1,8 +1,14 @@
-# Broadsheet for Windows
+# Broadsheet for Windows: Apple News on Windows
 
-The TV app's front page, reader and options panel, ported to a Windows desktop app. It reads
-Apple News through [Apple News Relay](https://github.com/VladislavEkimtcov/apple-news-relay) on
-a Mac, like the TV app.
+**Read Apple News on a Windows PC.** Broadsheet's front page, reader and options panel as a
+Windows desktop app for Windows 10 and 11. It reads Apple News through
+[Apple News Relay](https://github.com/VladislavEkimtcov/apple-news-relay) on a Mac on the same
+network, like the Android app. Not affiliated with Apple.
+
+**[Download broadsheet-windows.zip](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet-windows.zip)**
+(the latest release): unzip (if Windows blocked the download: right-click the zip → Properties →
+Unblock first), then `powershell -ExecutionPolicy Bypass -File install.ps1`. If SmartScreen
+stops `Broadsheet.exe`, choose *More info* → *Run anyway*.
 
 It's built for minimal Windows installs such as Windows 10/11 IoT Enterprise LTSC: one
 self-contained `Broadsheet.exe` (about 900 KB with the Newsreader fonts compiled in) on the
@@ -18,8 +24,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1 [-Autostart] [-Uninstall]
 ```
 
 Warning MSB3644 (no reference assemblies) is expected: MSBuild falls back to the GAC. The build
-needs `..\assets\fonts`, and the tests read `..\spec\cases`, so copy this folder together with
-`assets/` and `spec/`.
+needs `..\assets\fonts` and `..\version.env` (the version every port shares; it becomes the
+exe's file version), and the tests read `..\spec\cases`, so copy this folder together with
+`assets/`, `spec/` and `version.env`. `install.ps1` takes `Broadsheet.exe` from next to it (the
+release zip) or from `bin\`.
 
 ## Use
 
@@ -48,7 +56,7 @@ needs `..\assets\fonts`, and the tests read `..\spec\cases`, so copy this folder
 | `%LOCALAPPDATA%\Broadsheet\bodies` | stories opened or headed for (8 MB, 400 stories, two weeks), so they open at once, even while the Mac sleeps |
 
 It finds the relay by asking port 8787 on its own subnets (Windows has no Bonjour built in),
-then remembers the address. With relay 0.3 it talks to it the way the TV app does (see the TV
+then remembers the address. With relay 0.3 it talks to it the way the TV app does (see the Android
 README's "How it talks to the relay"): the front page in one call with `If-None-Match`, the
 relay's event stream for changes (shown once keys, wheel and clicks have been still for 8 s),
 deep sections a page at a time, stories in one trip with the rest as you read, and an interest

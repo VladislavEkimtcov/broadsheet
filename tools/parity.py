@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Checks PARITY.md against the code of both apps. Standard library only.
+"""Checks PARITY.md against the code of every front end (TV, Phone, Windows). Standard library only.
 
     python3 tools/parity.py                    # ledger vs. `// feature: <id>` tags
     python3 tools/parity.py --diff origin/main # also: one app changed without PARITY.md
 
+Where each platform's code is: the TV and the phone are one Android app. android/src/ is shared
+by both (relay client, controller, reader, options), android/tv/src/ is the TV's own UI and
+android/phone/src/ the phone's. Windows is windows/src/.
+
 Fails (exit 1) when:
-  - a ✅ cell has no tag for its ID in that platform's code
-  - a tag names an ID that isn't in PARITY.md, or sits in a platform marked —
+  - a ✅ cell has no tag for its ID in that platform's code (its own or the shared code)
+  - a tag names an ID that isn't in PARITY.md, or sits in a platform's own code where it's
+    marked — (a tag in shared Android code doesn't contradict a — on one of the two)
   - a ⚠️ or — row has no note, or an ID is listed twice
-  - (--diff) only one app's code changed since BASE, PARITY.md didn't, and no commit in the
-    range carries a `Parity: none` trailer
+  - (--diff) some front ends' code changed since BASE, others' didn't, PARITY.md didn't, and
+    no commit in the range carries a `Parity: none` trailer
 Lists the ⏳ rows (owed ports) as warnings.
 """
 import os
@@ -19,11 +24,15 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER = "PARITY.md"
+ANDROID = ("android/src/", "android/res/", "android/AndroidManifest.xml")
 PLATFORMS = {
-    # name: (column in the table, source tree, file extension, paths that count as "this app changed")
-    "TV": (2, "src", ".java", ("src/", "res/", "AndroidManifest.xml")),
-    "Windows": (3, "windows/src", ".cs", ("windows/src/", "windows/App.xaml")),
+    # name: (column in the table, its own source tree, source trees it shares, file extension,
+    #        paths that count as "this front end changed")
+    "TV": (2, "android/tv/src", ("android/src",), ".java", ANDROID + ("android/tv/src/",)),
+    "Phone": (3, "android/phone/src", ("android/src",), ".java", ANDROID + ("android/phone/src/",)),
+    "Windows": (4, "windows/src", (), ".cs", ("windows/src/", "windows/App.xaml")),
 }
+COLUMNS = 3 + len(PLATFORMS)
 TAG = re.compile(r"//\s*feature:\s*([a-z0-9_.,\s-]+)")
 ROW = re.compile(r"^\|\s*`([a-z0-9_.-]+)`\s*\|")
 
@@ -45,19 +54,21 @@ def read_ledger(errors):
                 continue
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             fid = m.group(1)
-            if len(cells) < 5:
-                errors.append("%s:%d: %s: expected 5 columns (ID, Feature, TV, Windows, Notes)" % (LEDGER, n, fid))
+            if len(cells) != COLUMNS:
+                errors.append("%s:%d: %s: expected %d columns (ID, Feature, %s, Notes)"
+                              % (LEDGER, n, fid, COLUMNS, ", ".join(PLATFORMS)))
                 continue
             if fid in rows:
                 errors.append("%s:%d: %s is listed twice" % (LEDGER, n, fid))
-            row = {"line": n, "notes": cells[4]}
-            for plat, (col, _, _, _) in PLATFORMS.items():
+            notes = cells[COLUMNS - 1]
+            row = {"line": n, "notes": notes}
+            for plat, (col, _, _, _, _) in PLATFORMS.items():
                 s = status(cells[col])
                 if s is None:
                     errors.append("%s:%d: %s: %s cell %r is not ✅, ⏳, ⚠️ or —" % (LEDGER, n, fid, plat, cells[col]))
                 row[plat] = s
                 row[plat + " cell"] = cells[col]
-                if s in ("divergent", "n/a") and not cells[4]:
+                if s in ("divergent", "n/a") and not notes:
                     errors.append("%s:%d: %s is %s on %s but has no note saying why" % (LEDGER, n, fid, s, plat))
             rows[fid] = row
     return rows
@@ -95,31 +106,39 @@ def check_diff(base, errors):
         errors.append("git diff against %s failed: %s" % (base, e.stderr.strip()))
         return
     touched = {p: any(c.startswith(pre) for c in changed for pre in prefixes)
-               for p, (_, _, _, prefixes) in PLATFORMS.items()}
+               for p, (_, _, _, _, prefixes) in PLATFORMS.items()}
     if LEDGER in changed or all(touched.values()) or not any(touched.values()):
         return
     if re.search(r"^Parity:\s*none\b", messages, re.M | re.I):
         return
-    only = [p for p, t in touched.items() if t][0]
-    other = [p for p in PLATFORMS if p != only][0]
-    errors.append("only the %s app changed since %s, and PARITY.md didn't. Port it to %s, or mark it ⏳ there "
-                  "in PARITY.md, or add a 'Parity: none' trailer if nothing a user sees changed." % (only, base, other))
+    changed_in = [p for p, t in touched.items() if t]
+    others = [p for p, t in touched.items() if not t]
+    errors.append("only %s changed since %s, and PARITY.md didn't. Port it to %s, or mark it ⏳ there "
+                  "in PARITY.md, or add a 'Parity: none' trailer if nothing a user sees changed."
+                  % (" and ".join(changed_in), base, " and ".join(others)))
 
 
 def main(argv):
     errors, warnings = [], []
     rows = read_ledger(errors)
-    for plat, (_, tree, ext, _) in PLATFORMS.items():
-        tags = read_tags(tree, ext)
+    unknown = set()
+    for plat, (_, tree, shared, ext, _) in PLATFORMS.items():
+        own = read_tags(tree, ext)
+        tags = dict(own)
+        for t in shared:
+            for fid, where in read_tags(t, ext).items():
+                tags.setdefault(fid, []).extend(where)
         for fid, where in sorted(tags.items()):
             if fid not in rows:
-                errors.append("%s: tag for %s, which isn't in PARITY.md" % (where[0], fid))
-            elif rows[fid][plat] == "n/a":
-                errors.append("%s: tag for %s, which PARITY.md marks — (n/a) on %s" % (where[0], fid, plat))
+                if where[0] not in unknown:
+                    unknown.add(where[0])
+                    errors.append("%s: tag for %s, which isn't in PARITY.md" % (where[0], fid))
+            elif rows[fid][plat] == "n/a" and fid in own:
+                errors.append("%s: tag for %s, which PARITY.md marks — (n/a) on %s" % (own[fid][0], fid, plat))
         for fid, row in rows.items():
             if row[plat] == "done" and fid not in tags:
                 errors.append("%s:%d: %s is ✅ on %s but no `// feature: %s` tag is in %s/"
-                              % (LEDGER, row["line"], fid, plat, fid, tree))
+                              % (LEDGER, row["line"], fid, plat, fid, " or ".join((tree,) + shared)))
             if row[plat] == "owed":
                 warnings.append("%s owes %s (%s)" % (plat, fid, row[plat + " cell"]))
     if "--diff" in argv:

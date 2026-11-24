@@ -7,7 +7,8 @@ https://github.com/VladislavEkimtcov/apple-news-relay
 Install (for this user, no admin rights):
   1. If Windows blocked the download: right-click the zip > Properties > Unblock, then unzip.
   2. Run:  powershell -ExecutionPolicy Bypass -File install.ps1
-     (adds Broadsheet to the Start menu; -Autostart also starts it at sign-in;
+     (adds Broadsheet to the Start menu; -Autostart also starts it at sign-in; -Persistent runs it
+      as a scheduled task that starts now and at sign-in;
       -Uninstall removes it)
   Or just run Broadsheet.exe. If SmartScreen says "Windows protected your PC",
   choose "More info", then "Run anyway".

@@ -7,6 +7,10 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Windows: `install.ps1 -Persistent` (or `--persistent`) installs Broadsheet as a scheduled task
+  named Broadsheet that starts it now and at every sign-in. Running install.ps1 again after a
+  build stops it, copies the new exe and starts it again on the desktop, also from an ssh
+  session; `schtasks /run /tn Broadsheet` starts it too. `-Uninstall` removes the task.
 - TV and Windows: **Relay address** is the last entry in Options, as on the phone. It shows the
   address set by hand or "Automatic" (with where it was found). On the TV, OK opens a box with
   the on-screen keyboard; on Windows, Enter or a click opens a pop-up with a text box. Empty goes

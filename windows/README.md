@@ -20,7 +20,7 @@ installer.
 ```bat
 build.cmd          :: bin\Broadsheet.exe, with the in-box MSBuild 4.0 and C# 5 compiler
 build.cmd test     :: also builds and runs tests\Tests.cs (a console runner; no NuGet)
-powershell -ExecutionPolicy Bypass -File install.ps1 [-Autostart] [-Uninstall]
+powershell -ExecutionPolicy Bypass -File install.ps1 [-Autostart | -Persistent] [-Uninstall]
 ```
 
 Warning MSB3644 (no reference assemblies) is expected: MSBuild falls back to the GAC. The build
@@ -28,6 +28,9 @@ needs `..\assets\fonts` and `..\version.env` (the version every port shares; it 
 exe's file version), and the tests read `..\spec\cases`, so copy this folder together with
 `assets/`, `spec/` and `version.env`. `install.ps1` takes `Broadsheet.exe` from next to it (the
 release zip) or from `bin\`.
+
+While developing, install once with `-Persistent`; after that, `build.cmd && powershell
+-ExecutionPolicy Bypass -File install.ps1` relaunches the new build on the desktop, also over ssh.
 
 ## Use
 

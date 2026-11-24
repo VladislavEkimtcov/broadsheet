@@ -6,6 +6,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.util.TypedValue;
@@ -29,6 +30,10 @@ import java.util.List;
  * <p>Keys: Down/OK scroll about half a screen (OK at the end opens the next story), Up back,
  * Fast-forward/Rewind a full screen, Left/Right the previous/next story, Back the front page.
  * A video scrolled into view is selected (ringed, "Play video"): OK or Play plays it.
+ *
+ * <p>Touch ({@link Ui#touch}, the phone): the same column, as wide as the screen allows, under
+ * a bar with ← and ☰; it scrolls and flings with a finger, a sideways swipe goes to the
+ * previous or next story, and a tap on a video plays it.
  */
 final class Reader extends FrameLayout {  // feature: reader.column
     interface Listener {
@@ -44,6 +49,9 @@ final class Reader extends FrameLayout {  // feature: reader.column
 
         /** Reading toward the end of the story (time to get the next one ready). */
         void onNearStoryEnd();
+
+        /** Touch: ☰ in the bar. */
+        void onMenu();
     }
 
     /** Body text sizes (sp), from close reading to across the room; {@link #STANDARD} is the default. */
@@ -66,6 +74,15 @@ final class Reader extends FrameLayout {  // feature: reader.column
     private Picture selectedVideo;
     /** Where the rest of the story starts while only its opening is shown; -1 when it's whole. */
     private int nextBlock = -1;
+    /** Touch: the bar on top, the column's holder (slides with a sideways swipe), and the place
+     *  in the story as last seen (kept across a rotation). */
+    private Bar bar;
+    private FrameLayout holder;
+    private float seen;
+    private final int slop;
+    private float downX, downY;
+    private boolean swiping;
+    private android.view.VelocityTracker velocity;
 
     Reader(Context c, Images images, Listener listener) {
         super(c);
@@ -76,7 +93,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
         column = new LinearLayout(c);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(0, Ui.dp(56), 0, Ui.dp(140));
-        FrameLayout holder = new FrameLayout(c);
+        holder = new FrameLayout(c);
         holder.addView(column, new FrameLayout.LayoutParams(Ui.dp(700), -2, Gravity.CENTER_HORIZONTAL));
         scroll.addView(holder, new ViewGroup.LayoutParams(-1, -2));
         addView(scroll, new LayoutParams(-1, -1));
@@ -86,7 +103,45 @@ final class Reader extends FrameLayout {  // feature: reader.column
         progress.setScaleX(0);
         addView(progress, new LayoutParams(-1, Ui.dp(3)));
         ticker = new Ticker(c);
-        addView(ticker, new LayoutParams(-1, Ui.dp(58), Gravity.BOTTOM));
+        addView(ticker, new LayoutParams(-1, Ui.dp(Ui.touch ? 66 : 58), Gravity.BOTTOM));
+        slop = android.view.ViewConfiguration.get(c).getScaledTouchSlop();
+        if (Ui.touch) {
+            scroll.setVerticalScrollBarEnabled(true);
+            bar = new Bar(c);
+            addView(bar, new LayoutParams(-1, -2, Gravity.TOP));
+            applyInsets();
+        }
+    }
+
+    /** Touch: room for the status bar on top and the gesture bar below. */
+    void applyInsets() {
+        if (!Ui.touch) return;
+        int barH = Ui.dp(52) + Ui.insetTop;
+        bar.setPadding(0, Ui.insetTop, 0, 0);
+        column.setPadding(0, barH + Ui.dp(22), 0, Ui.dp(96) + Ui.insetBottom);
+        ((LayoutParams) progress.getLayoutParams()).topMargin = barH;
+        LayoutParams tl = (LayoutParams) ticker.getLayoutParams();
+        tl.height = Ui.dp(66) + Ui.insetBottom;
+        ticker.setPadding(0, 0, 0, Ui.insetBottom);
+        requestLayout();
+    }
+
+    /** The column's width: the TV's (wider for big type), or on touch what the screen allows. */
+    private int columnWidth() {
+        int tv = Ui.dp(700 + Math.max(0f, size() - 24f) * 10f);
+        if (!Ui.touch) return tv;
+        int w = getWidth() > 0 ? getWidth() : getResources().getDisplayMetrics().widthPixels;
+        return Math.max(Ui.dp(200), Math.min(Ui.dp(680), w - Ui.dp(22) * 2));
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int ow, int oh) {
+        super.onSizeChanged(w, h, ow, oh);
+        if (!Ui.touch || w == ow) return;
+        // A rotation: the column takes the new width, the story stays at the same place.
+        final float at = seen;
+        setTextSizeStep(sizeStep);
+        if (story != null && at > 0) post(() -> restoreFraction(at));
     }
 
     Story story() {
@@ -127,7 +182,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
     void setTextSizeStep(int step) {
         sizeStep = Math.max(0, Math.min(SIZES.length - 1, step));
         // Big type for reading from the sofa gets a wider column, so lines keep a few words.
-        int width = Ui.dp(700 + Math.max(0f, size() - 24f) * 10f);
+        int width = columnWidth();
         ViewGroup.LayoutParams lp = column.getLayoutParams();
         if (lp != null && lp.width != width) {
             lp.width = width;
@@ -204,10 +259,10 @@ final class Reader extends FrameLayout {  // feature: reader.column
             column.addView(loader, ll);
         } else if ("preview".equals(a.completeness)) {
             note = note("This is the opening of an Apple News+ story. The rest needs an Apple News+ subscription "
-                    + "on the Mac.\n\nRight: next story");
+                    + "on the Mac.\n\n" + next());
         } else if ("summary".equals(a.completeness)) {
-            note = note(a.jobFailed ? "Apple News didn't hand over the full story, so this is the summary.\n\nRight: next story"
-                    : "This is the summary only.\n\nRight: next story");
+            note = note(a.jobFailed ? "Apple News didn't hand over the full story, so this is the summary.\n\n" + next()
+                    : "This is the summary only.\n\n" + next());
         } else if (nextBlock < 0) {
             endNote();
         }
@@ -215,9 +270,17 @@ final class Reader extends FrameLayout {  // feature: reader.column
         afterLayout();
     }
 
+    private static String next() {
+        return Ui.touch ? "Swipe left for the next story" : "Right: next story";
+    }
+
     private void endNote() {
-        note = note("—\n\nOK: next story");
+        note = note(Ui.touch ? "—\n\nNext story  →" : "—\n\nOK: next story");
         note.setGravity(Gravity.CENTER_HORIZONTAL);
+        if (Ui.touch) {
+            note.setPadding(0, 0, 0, Ui.dp(12));
+            note.setOnClickListener(v -> listener.onMove(1));
+        }
     }
 
     /** Where the rest of the open story starts, or -1 once it's whole. */
@@ -259,10 +322,11 @@ final class Reader extends FrameLayout {  // feature: reader.column
             b.setSpan(new ForegroundColorSpan(s.accent()), 0, b.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         String ago = Dates.ago(s.published, System.currentTimeMillis());
-        if (!ago.isEmpty()) b.append(b.length() > 0 ? "   ·   " : "").append(ago);
-        if (words > 0) b.append("   ·   ").append(Dates.readingTime(words));
-        else if (s.minutes > 0) b.append("   ·   ").append(String.valueOf(s.minutes)).append(" min read");
-        if (s.paid) b.append("   ·   Apple News+");
+        String sep = Ui.touch ? "  ·  " : "   ·   ";
+        if (!ago.isEmpty()) b.append(b.length() > 0 ? sep : "").append(ago);
+        if (words > 0) b.append(sep).append(Dates.readingTime(words));
+        else if (s.minutes > 0) b.append(sep).append(String.valueOf(s.minutes)).append(" min read");
+        if (s.paid) b.append(sep).append("Apple News+");
         dateline.setText(b);
         dateline.setLetterSpacing(0.04f);
         column.addView(dateline);
@@ -485,6 +549,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
 
     private void onScroll() {
         updateProgress();
+        seen = fraction();
         int top = scroll.getScrollY(), bottom = top + scroll.getHeight();
         View content = scroll.getChildAt(0);
         if (article != null && content != null && scroll.getHeight() > 0
@@ -611,7 +676,7 @@ final class Reader extends FrameLayout {  // feature: reader.column
             float t = (android.os.SystemClock.uptimeMillis() - started) / 1000f;
             if (t > 60 && running) {
                 running = false;  // stop moving; the page must go quiet
-                stage = "Apple News hasn't sent the story yet. Right: next story";
+                stage = "Apple News hasn't sent the story yet. " + (Ui.touch ? "Swipe for the next story" : "Right: next story");
             }
             int w = getWidth(), h = getHeight();
             fill.setColor(Ui.SURFACE);
@@ -624,13 +689,148 @@ final class Reader extends FrameLayout {  // feature: reader.column
             float pip = (t * 0.9f) % 1f;  // a bright run along the filled part keeps it visibly alive
             fill.setColor(Ui.alpha(Ui.INK, 0.6f));
             c.drawRect(w * p * pip, 0, Math.min(w * p, w * p * pip + Ui.px(36)), Ui.px(3), fill);
-            float pad = Ui.px(40), base = h / 2f + stagePaint.getTextSize() * 0.38f + Ui.px(1.5f);
-            c.drawText(stage, pad, base, stagePaint);
-            float x = pad + stagePaint.measureText(stage) + Ui.px(14);
-            if (t >= 1.5f) c.drawText(Math.round(t) + " s", x, base, timePaint);
             String line = press[(int) (t / 1.6f) % press.length] + "…";
-            c.drawText(line, w - pad - pressPaint.measureText(line), base, pressPaint);
+            if (Ui.touch) {
+                // Two lines on a narrow screen: what the Mac is doing, then the press room.
+                float pad = Ui.px(18), inner = h - getPaddingBottom();
+                float base = inner * 0.42f + stagePaint.getTextSize() * 0.38f;
+                String sec = t >= 1.5f ? Math.round(t) + " s" : "";
+                float room = w - pad * 2 - timePaint.measureText(sec) - Ui.px(10);
+                String st = TextUtils.ellipsize(stage, stagePaint, room, TextUtils.TruncateAt.END).toString();
+                c.drawText(st, pad, base, stagePaint);
+                if (!sec.isEmpty()) c.drawText(sec, w - pad - timePaint.measureText(sec), base, timePaint);
+                c.drawText(line, pad, base + pressPaint.getTextSize() * 1.45f, pressPaint);
+            } else {
+                float pad = Ui.px(40), base = h / 2f + stagePaint.getTextSize() * 0.38f + Ui.px(1.5f);
+                c.drawText(stage, pad, base, stagePaint);
+                float x = pad + stagePaint.measureText(stage) + Ui.px(14);
+                if (t >= 1.5f) c.drawText(Math.round(t) + " s", x, base, timePaint);
+                c.drawText(line, w - pad - pressPaint.measureText(line), base, pressPaint);
+            }
             if (running && isAttachedToWindow()) postInvalidateOnAnimation();
+        }
+    }
+
+    /** Touch: a sideways swipe (clearly more across than down) goes to the previous or next story. */
+    @Override
+    public boolean onInterceptTouchEvent(android.view.MotionEvent e) {  // feature: phone.swipe
+        if (!Ui.touch) return super.onInterceptTouchEvent(e);
+        switch (e.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                downX = e.getX();
+                downY = e.getY();
+                swiping = false;
+                if (velocity != null) velocity.clear();
+                break;
+            case android.view.MotionEvent.ACTION_MOVE: {
+                float dx = e.getX() - downX, dy = e.getY() - downY;
+                if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.8f && e.getY() > Ui.dp(52) + Ui.insetTop) {
+                    swiping = true;
+                    downX = e.getX();
+                    return true;
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean onTouchEvent(android.view.MotionEvent e) {
+        if (!Ui.touch || !swiping) return super.onTouchEvent(e);
+        if (velocity == null) velocity = android.view.VelocityTracker.obtain();
+        velocity.addMovement(e);
+        float dx = e.getX() - downX;
+        switch (e.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_MOVE:
+                holder.setTranslationX(dx * 0.55f);
+                holder.setAlpha(1f - Math.min(0.5f, Math.abs(dx) / getWidth()));
+                return true;
+            case android.view.MotionEvent.ACTION_UP: {
+                velocity.computeCurrentVelocity(1000);
+                float vx = velocity.getXVelocity();
+                swiping = false;
+                holder.animate().translationX(0).alpha(1f).setDuration(160).start();
+                boolean far = Math.abs(dx) > getWidth() * 0.22f;
+                boolean fast = Math.abs(vx) > Ui.dp(700) && Math.signum(vx) == Math.signum(dx) && Math.abs(dx) > slop;
+                if (far || fast) listener.onMove(dx < 0 ? 1 : -1);
+                return true;
+            }
+            case android.view.MotionEvent.ACTION_CANCEL:
+                swiping = false;
+                holder.animate().translationX(0).alpha(1f).setDuration(160).start();
+                return true;
+            default:
+                return true;
+        }
+    }
+
+    /** Touch: ← back to the front page, ☰ options; on top of the page, in the page's colour. */
+    // feature: win.icon_buttons
+    private final class Bar extends View {
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private int pressed = -1;
+
+        Bar(Context c) {
+            super(c);
+        }
+
+        @Override
+        protected void onMeasure(int wSpec, int hSpec) {
+            setMeasuredDimension(MeasureSpec.getSize(wSpec), Ui.dp(52) + getPaddingTop());
+        }
+
+        private int which(float x) {
+            if (x < Ui.dp(64)) return 0;
+            if (x > getWidth() - Ui.dp(64)) return 1;
+            return -1;
+        }
+
+        @Override
+        public boolean onTouchEvent(android.view.MotionEvent e) {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    pressed = which(e.getX());
+                    invalidate();
+                    return true;
+                case android.view.MotionEvent.ACTION_UP: {
+                    int w = which(e.getX());
+                    if (w == pressed && w == 0) listener.onClose();
+                    else if (w == pressed && w == 1) listener.onMenu();
+                    pressed = -1;
+                    invalidate();
+                    return true;
+                }
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    pressed = -1;
+                    invalidate();
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            int w = getWidth(), h = getHeight(), top = getPaddingTop();
+            fill.setColor(Ui.PAPER);
+            c.drawRect(0, 0, w, h, fill);
+            fill.setColor(Ui.RULE);
+            c.drawRect(0, h - Ui.px(1), w, h, fill);
+            for (int i = 0; i < 2; i++) {
+                float x0 = i == 0 ? 0 : w - Ui.dp(64);
+                if (pressed == i) {
+                    fill.setColor(Ui.SURFACE_HI);
+                    c.drawRect(x0, top, x0 + Ui.dp(64), h - Ui.px(1), fill);
+                    fill.setColor(Ui.ACCENT);
+                    c.drawRect(x0, h - Ui.px(4), x0 + Ui.dp(64), h - Ui.px(1), fill);
+                }
+                fill.setColor(Ui.INK);
+                float size = Ui.px(24);
+                Icons.draw(c, i == 0 ? Icons.BACK : Icons.MENU, x0 + (Ui.dp(64) - size) / 2, top + (Ui.dp(52) - size) / 2, size, fill);
+            }
         }
     }
 
@@ -702,12 +902,16 @@ final class Reader extends FrameLayout {  // feature: reader.column
             label.setTextSize(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14, getResources().getDisplayMetrics()));
             ring.setStyle(Paint.Style.STROKE);
             ring.setStrokeWidth(Ui.px(3));
+            if (video && Ui.touch) setOnClickListener(v -> play(this));  // feature: video.inline
         }
 
         @Override
         protected void onMeasure(int wSpec, int hSpec) {
             int w = MeasureSpec.getSize(wSpec);
-            setMeasuredDimension(w, Math.min(Math.round(w * aspect), Ui.dp(620)));
+            int max = Ui.dp(620);
+            // Touch: held sideways, a picture still fits on the screen.
+            if (Ui.touch) max = Math.min(max, Math.round(Reader.this.getHeight() * 0.8f));
+            setMeasuredDimension(w, Math.max(Ui.dp(120), Math.min(Math.round(w * aspect), max)));
         }
 
         void setNear(boolean value) {
@@ -747,14 +951,14 @@ final class Reader extends FrameLayout {  // feature: reader.column
                 c.drawBitmap(bitmap, null, dst, paint);
             }
             if (video) {
-                boolean on = selectedVideo == this;
-                String text = on ? (stream != null ? "▶  Play video   OK" : "Plays only in Apple News") : "▶  Video";
+                boolean on = selectedVideo == this || Ui.touch;
+                String text = on ? (stream != null ? (Ui.touch ? "▶\uFE0E  Play video" : "▶  Play video   OK") : "Plays only in Apple News") : "▶  Video";
                 float tw = label.measureText(text);
                 label.setColor(on && stream != null ? Ui.ACCENT : 0xCC000000);
                 c.drawRect(Ui.px(12), h - Ui.px(48), Ui.px(40) + tw, h - Ui.px(12), label);
                 label.setColor(0xFFFFFFFF);
                 c.drawText(text, Ui.px(26), h - Ui.px(24), label);
-                if (on) {
+                if (on && !Ui.touch) {
                     ring.setColor(Ui.FOCUS);
                     c.drawRect(Ui.px(1.5f), Ui.px(1.5f), w - Ui.px(1.5f), h - Ui.px(1.5f), ring);
                 }

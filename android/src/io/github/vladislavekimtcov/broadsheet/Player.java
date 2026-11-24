@@ -25,6 +25,9 @@ import java.util.Locale;
  *
  * <p>Keys: OK or Play/Pause pauses and resumes, Left/Right 10 s, Rewind/Fast-forward 30 s,
  * Up/Down show the controls, Back closes. The controls hide after a few seconds of playing.
+ *
+ * <p>Touch: full screen without the system bars; a tap pauses or plays and shows the controls,
+ * a tap on the line seeks, ← or Back closes. A TextureView here too (safe on phones).
  */
 final class Player extends FrameLayout implements TextureView.SurfaceTextureListener {  // feature: video.inline
     interface Listener {
@@ -39,6 +42,7 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
     private final LinearLayout controls;
     private final TextView title, time, hint, status;
     private final Bar bar;
+    private View back;
     private TextureView texture;
     private Surface surface;
     private MediaPlayer player;
@@ -91,12 +95,63 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
         time = Ui.text(c, 14, 0xFFE4DED3, Ui.sansMedium);
         row.addView(time, new LinearLayout.LayoutParams(0, -2, 1));
         hint = Ui.text(c, 14, 0xFFB1AA9E, Ui.sans);
-        hint.setText("OK pause   ·   ◀ ▶ 10 s   ·   Back close");
+        hint.setText(Ui.touch ? "Tap to pause   ·   Back to close" : "OK pause   ·   ◀ ▶ 10 s   ·   Back close");
         row.addView(hint);
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, -2);
         rl.topMargin = Ui.dp(10);
         controls.addView(row, rl);
         addView(controls, new LayoutParams(-1, -2, Gravity.BOTTOM));
+        if (Ui.touch) {
+            controls.setPadding(Ui.dp(24), Ui.dp(140), Ui.dp(24), Ui.dp(28));
+            back = new View(c) {
+                private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+                @Override
+                protected void onDraw(Canvas canvas) {
+                    p.setColor(0x99000000);
+                    canvas.drawRect(0, 0, getWidth(), getHeight(), p);
+                    p.setColor(0xFFF4EFE6);
+                    Icons.draw(canvas, Icons.BACK, (getWidth() - Ui.px(24)) / 2, (getHeight() - Ui.px(24)) / 2, Ui.px(24), p);
+                }
+            };
+            back.setOnClickListener(v -> close());
+            LayoutParams bl2 = new LayoutParams(Ui.dp(52), Ui.dp(52), Gravity.TOP | Gravity.START);
+            bl2.leftMargin = bl2.topMargin = Ui.dp(16);
+            addView(back, bl2);
+        }
+    }
+
+    /** Touch: a tap pauses or plays (and shows the controls); on the line, it seeks there. */
+    @Override
+    public boolean onTouchEvent(android.view.MotionEvent e) {
+        if (!Ui.touch) return super.onTouchEvent(e);
+        if (e.getActionMasked() != android.view.MotionEvent.ACTION_UP) return true;
+        if (player == null || !prepared) {
+            if (player == null) close();  // it failed: a tap goes back to the story
+            return true;
+        }
+        int[] at = new int[2];
+        bar.getLocationOnScreen(at);
+        int[] me = new int[2];
+        getLocationOnScreen(me);
+        float y = e.getY() + me[1];
+        if (controls.getVisibility() == VISIBLE && Math.abs(y - (at[1] + bar.getHeight() / 2f)) < Ui.dp(22)
+                && player.getDuration() > 0) {
+            float f = Math.max(0, Math.min(1, (e.getX() + me[0] - at[0]) / Math.max(1f, bar.getWidth())));
+            player.seekTo(Math.round(player.getDuration() * f));
+        } else if (player.isPlaying()) {
+            player.pause();
+        } else {
+            player.start();
+        }
+        showControls();
+        updateTime();
+        return true;
+    }
+
+    /** Closes it as Back does. */
+    void closeNow() {
+        close();
     }
 
     boolean playing() {
@@ -109,6 +164,10 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
         setVisibility(VISIBLE);
         bringToFront();
         setKeepScreenOn(true);
+        if (Ui.touch) {
+            setSystemUiVisibility(SYSTEM_UI_FLAG_FULLSCREEN | SYSTEM_UI_FLAG_HIDE_NAVIGATION | SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | SYSTEM_UI_FLAG_LAYOUT_STABLE | SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
         title.setText(storyTitle != null ? storyTitle : "");
         status.setText("Loading video…");
         status.setVisibility(VISIBLE);
@@ -136,6 +195,7 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
         stage.removeAllViews();
         texture = null;
         setKeepScreenOn(false);
+        if (Ui.touch) setSystemUiVisibility(0);
         setVisibility(GONE);
     }
 
@@ -149,7 +209,7 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
             mp.setDataSource(url);
             mp.setSurface(surface);
         } catch (java.io.IOException | RuntimeException e) {
-            fail("This video's address doesn't work on the TV.");
+            fail("This video's address doesn't work on the " + Ui.device + ".");
             return;
         }
         mp.setOnPreparedListener(m -> {
@@ -175,7 +235,7 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
             return false;
         });
         mp.setOnErrorListener((m, what, extra) -> {
-            fail("This video won't play on the TV (" + what + ", " + extra + ").");
+            fail("This video won't play on the " + Ui.device + " (" + what + ", " + extra + ").");
             return true;
         });
         mp.setOnCompletionListener(m -> close());
@@ -188,7 +248,7 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
             player = null;
         }
         prepared = false;
-        status.setText(text + "\n\nBack: return to the story");
+        status.setText(text + (Ui.touch ? "\n\nTap to go back to the story" : "\n\nBack: return to the story"));
         status.setVisibility(VISIBLE);
         controls.setVisibility(GONE);
     }
@@ -224,11 +284,15 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
     public void onSurfaceTextureUpdated(SurfaceTexture st) {}
 
     private void hideControls() {
-        if (player != null && prepared && player.isPlaying()) controls.setVisibility(GONE);
+        if (player != null && prepared && player.isPlaying()) {
+            controls.setVisibility(GONE);
+            if (back != null) back.setVisibility(GONE);
+        }
     }
 
     private void showControls() {
         controls.setVisibility(VISIBLE);
+        if (back != null) back.setVisibility(VISIBLE);
         removeCallbacks(tick);
         post(tick);
         removeCallbacks(hide);
@@ -244,7 +308,8 @@ final class Player extends FrameLayout implements TextureView.SurfaceTextureList
         int pos = player.getCurrentPosition(), dur = player.getDuration();
         time.setText(dur > 0 ? clock(pos) + " / " + clock(dur) : clock(pos));
         bar.set(dur > 0 ? pos / (float) dur : 0);
-        hint.setText(player.isPlaying() ? "OK pause   ·   ◀ ▶ 10 s   ·   Back close" : "Paused   ·   OK play   ·   Back close");
+        if (Ui.touch) hint.setText(player.isPlaying() ? "Tap to pause   ·   Back to close" : "Paused   ·   Tap to play");
+        else hint.setText(player.isPlaying() ? "OK pause   ·   ◀ ▶ 10 s   ·   Back close" : "Paused   ·   OK play   ·   Back close");
     }
 
     private static String clock(int ms) {

@@ -8,9 +8,10 @@ import android.graphics.Path;
 /**
  * The few icons that have no plain glyph, drawn as paths on a 24-unit grid so they sit with the
  * text glyphs beside them (one colour, no emoji): thumbs up and down, and a laptop for Handoff.
+ * For touch: a menu (three bars), a back arrow, chevrons for steppers, and play.
  */
 final class Icons {
-    static final int THUMB_UP = 1, THUMB_DOWN = 2, LAPTOP = 3;
+    static final int THUMB_UP = 1, THUMB_DOWN = 2, LAPTOP = 3, MENU = 4, BACK = 5, LEFT = 6, RIGHT = 7, PLAY = 8;
 
     private static final Path THUMB = new Path();
     private static final Path tmp = new Path();
@@ -52,6 +53,33 @@ final class Icons {
             c.drawRect(x + 4.5f * u, y + 5 * u, x + 19.5f * u, y + 15.5f * u, paint);
             paint.setStrokeWidth(2.6f * u);
             c.drawLine(x + 1.5f * u, y + 19 * u, x + 22.5f * u, y + 19 * u, paint);
+        } else if (which == MENU) {
+            paint.setStyle(Paint.Style.FILL);
+            for (int i = 0; i < 3; i++) c.drawRect(x + 3 * u, y + (5 + i * 6.25f) * u, x + 21 * u, y + (7.25f + i * 6.25f) * u, paint);
+        } else if (which == BACK) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.25f * u);
+            paint.setStrokeCap(Paint.Cap.SQUARE);
+            c.drawLine(x + 4.5f * u, y + 12 * u, x + 20.5f * u, y + 12 * u, paint);
+            c.drawLine(x + 4.5f * u, y + 12 * u, x + 11 * u, y + 5.5f * u, paint);
+            c.drawLine(x + 4.5f * u, y + 12 * u, x + 11 * u, y + 18.5f * u, paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+        } else if (which == LEFT || which == RIGHT) {
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(2.25f * u);
+            paint.setStrokeCap(Paint.Cap.SQUARE);
+            float tip = which == LEFT ? 8.5f : 15.5f, back = which == LEFT ? 15 : 9;
+            c.drawLine(x + back * u, y + 5.5f * u, x + tip * u, y + 12 * u, paint);
+            c.drawLine(x + tip * u, y + 12 * u, x + back * u, y + 18.5f * u, paint);
+            paint.setStrokeCap(Paint.Cap.BUTT);
+        } else if (which == PLAY) {
+            tmp.reset();
+            tmp.moveTo(x + 6 * u, y + 4 * u);
+            tmp.lineTo(x + 20 * u, y + 12 * u);
+            tmp.lineTo(x + 6 * u, y + 20 * u);
+            tmp.close();
+            paint.setStyle(Paint.Style.FILL);
+            c.drawPath(tmp, paint);
         }
         paint.setStyle(style);
         paint.setStrokeWidth(stroke);

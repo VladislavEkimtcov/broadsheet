@@ -17,6 +17,13 @@ final class Ui {
     /** Broadsheet red: the masthead rule, the selected section, the reading progress. */
     static int ACCENT;
     static boolean light;
+    /** A phone or tablet: the touch UI (phone/src) and the touch modes of the shared views.
+     *  False on a TV, where everything stays as the remote expects. Set once, before any view. */
+    static boolean touch;
+    /** "TV" or "phone", for the words that name the device. */
+    static String device = "TV";
+    /** Touch: the system bars over the window (status bar, gesture or button bar), in pixels. */
+    static int insetTop, insetBottom, insetLeft, insetRight;
 
     static {
         setLight(false);

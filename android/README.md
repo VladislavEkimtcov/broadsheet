@@ -4,11 +4,39 @@
 news reader built for the remote; on a phone or tablet, a touch reader. Broadsheet shows your
 Apple News (Today's Top Stories, For You, Trending, your topics and channels, Saved Stories)
 and reads whole articles in a calm, newspaper-style reader. No ads, no account on the device.
-(The phone UI arrives in 0.4.0; 0.3.0 shows the TV's UI on a phone.)
 
 **[Download broadsheet.apk](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet.apk)**
 (the latest release). The rest of Broadsheet, the Windows port and how releases are made:
 [the main README](../README.md).
+
+## On a phone
+
+Apple News for Android phones and tablets (Android 7.1 or later), in the same newspaper style:
+
+| | | |
+|---|---|---|
+| ![Apple News front page in Broadsheet on an Android phone, light by day: masthead, a strip of sections, a hero story with its headline over the picture, and briefs](../docs/phone/front-light.jpg) | ![The reader on an Android phone: dateline, serif headline, standfirst and the lead picture under a bar with a back arrow and a menu](../docs/phone/reader.jpg) | ![The options sheet on an Android phone: save, like or dislike, mark as unread, more from the publisher, open in the browser and the text size slider](../docs/phone/options.jpg) |
+
+- **Front page:** a masthead with ☰, the sections as a strip along the top that scrolls
+  sideways (the chosen one lit, with the red bar at its foot), and the section in one column:
+  hero, briefs, picture cards; two columns in landscape or on a tablet. Tap a story to read it,
+  long-press it for its options. Deep sections load more as you scroll; pull down to refresh.
+  The last front page shows at once when the app starts; if the Mac isn't answering, a note
+  says so and what's there stays readable.
+- **Reader:** the TV's serif column, as wide as the screen allows. Scroll and fling with a
+  finger, swipe sideways for the previous or next story, ← or Back for the front page. It
+  reopens where you left off; the text size goes from 14 to 40 pt (17 to start).
+- **Video:** tap it; it plays full screen. Tap to pause, tap the line to seek, Back to close.
+- **Options (☰):** a sheet from the bottom with everything the TV has (On the Mac, save, mark
+  as unread, like or dislike, more from, text size, appearance, read stories, continue reading,
+  refresh), plus Open in the browser and **Relay address**: leave it empty and the phone finds
+  the relay by itself, or type the Mac's address (`192.168.1.20` means
+  `http://192.168.1.20:8787`).
+- Light by day, dark after sunset, like the TV; the status bar and gesture bar follow.
+
+![The phone's front page after sunset, in the dark theme](../docs/phone/front-dark.jpg)
+
+![The front page on a phone held sideways: two columns of picture cards](../docs/phone/landscape.jpg)
 
 ## On a TV
 
@@ -117,7 +145,10 @@ GitHub Actions; the certificate they must carry is pinned in `signing-cert.sha25
 
 Sources, one Java package in three roots: `src/` is shared by the TV and the phone (relay
 client, the controller `Main`, reader, options panel, player, cards), `tv/src/` is the TV's
-front page with its rail, `phone/src/` the phone's (from 0.4.0).
+front page with its rail, `phone/src/` the phone's. The launcher activity `.Main` decides at
+start: a TV (UI mode television, or no touchscreen) gets the TV UI in landscape; anything else
+the touch UI (`Ui.touch`), which also switches the shared reader, options and player to their
+touch modes.
 
 ## How it talks to the relay
 
@@ -150,7 +181,7 @@ fetch the picture size they show (750 px wide for a tile, not 2048).
 
 ## Requirements
 
-Android 7.1 (API 25) or later. TVs with a D-pad remote: Fire TV Stick and Cube, Fire TV smart
+Android 7.1 (API 25) or later: phones and tablets with a touchscreen, and TVs with a D-pad remote: Fire TV Stick and Cube, Fire TV smart
 TVs, Google TV, Android TV; built and tuned on a Fire OS 8 (Android 11) TV with a MediaTek
 MT5896.
 

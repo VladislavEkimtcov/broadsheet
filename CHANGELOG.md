@@ -5,6 +5,34 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
+## 0.4.0
+
+2026-11-23. **Apple News on Android phones.** The same `broadsheet.apk` now runs on phones and
+tablets with a touch UI; on a TV it looks and works as before.
+
+- **Phone front page:** a masthead with ☰, the sections as a strip along the top (the TV's
+  rail on its side, with the same square highlight), then the section in one column: the hero
+  (with the contrast blocks), two briefs and picture cards; two columns where the screen is
+  wide. Deep sections load more as you scroll. Pull down to refresh. The cached page shows at
+  once on a cold start; when the Mac isn't answering, a plain note says so and the page stays
+  readable (tap to try again).
+- **Phone reader:** the same serif column and typesetting, scrolled and flung with a finger;
+  swipe sideways for the previous or next story; ← and ☰ in a bar on top. The loading band,
+  stories fetched ahead, kept stories, the rest loading as you read, reopening where you left
+  off and the text size all work as on the TV. A phone starts at 17 pt.
+- **Video:** a tap plays it full screen without the system bars; tap to pause, tap the line to
+  seek, ← or Back to close.
+- **Options** as a sheet from the bottom (☰, or a long press on a card): everything the TV
+  has, plus **Open in the browser** and a **Relay address** field (empty: found by itself;
+  it writes the same `relay.conf` the TV reads).
+- System Back closes the video, the options and the story; the page runs under the status and
+  gesture bars, with their icons light or dark to match; rotating keeps your place.
+- What's on screen or being read tells the Mac what to fetch ahead, as on the TV; the list is
+  dropped when the app goes to the background.
+- TV: no visible change. The landscape lock moved from the manifest into code (TV only). Android
+  TV, Fire TV and Google TV keep the single launcher entry.
+- Windows: no change besides the version.
+
 ## 0.3.0
 
 2026-11-23. Needs Apple News Relay 0.3 for the new calls; a 0.2 relay gets the old ones.

@@ -189,6 +189,52 @@ final class Relay {
         }
     }
 
+    /** The address set by hand in relay.conf, or "" when the relay is found by itself. */
+    String manualUrl() {
+        return "relay.conf".equals(origin) && base != null ? base : "";
+    }
+
+    /**
+     * Sets the address by hand (what relay.conf holds, so it's the same file the TV reads), or
+     * with an empty one goes back to finding the relay by itself. "10.0.0.4" is taken as
+     * http://10.0.0.4:8787. Returns the address now used, or "" for automatic.
+     */
+    String setManual(String typed) {  // feature: relay.conf
+        String url = typed == null ? "" : typed.trim().replaceAll("/+$", "");
+        if (!url.isEmpty()) {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) url = "http://" + url;
+            if (!url.substring(url.indexOf("//") + 2).contains(":")) url = url + ":" + PORT;
+        }
+        File dir = context.getExternalFilesDir(null);
+        if (dir != null) {
+            File f = new File(dir, "relay.conf");
+            StringBuilder b = new StringBuilder();
+            if (!url.isEmpty()) b.append("url=").append(url).append('\n');
+            if (token != null && !token.isEmpty()) b.append("token=").append(token).append('\n');
+            if (b.length() == 0) {
+                f.delete();
+            } else {
+                try (OutputStream out = new FileOutputStream(f)) {
+                    out.write(b.toString().getBytes(StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    // kept for this run only
+                }
+            }
+        }
+        prefs.edit().remove("url").apply();
+        frontEtag = null;
+        legacy = false;
+        noInterest = false;
+        if (url.isEmpty()) {
+            base = null;
+            origin = "";
+        } else {
+            base = url;
+            origin = "relay.conf";
+        }
+        return url;
+    }
+
     /**
      * Finds the relay and remembers it: Bonjour first, and after a moment a look at port 8787 on
      * this TV's own subnet too, for networks that don't pass Bonjour between Wi-Fi and the Mac.

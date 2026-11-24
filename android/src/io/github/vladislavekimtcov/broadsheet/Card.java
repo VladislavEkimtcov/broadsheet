@@ -52,7 +52,8 @@ final class Card extends View implements Images.Target {
     private final Rect dst = new Rect();
     private StaticLayout title, excerpt;
     private String meta;
-    private final float radius = Ui.px(6);
+    /** Touch (the phone) draws square cards; the TV keeps its rounded ones. */
+    private final float radius = Ui.touch ? 0 : Ui.px(6);
 
     Card(Context c, int style, Images images) {
         super(c);
@@ -245,6 +246,12 @@ final class Card extends View implements Images.Target {
     }
 
     @Override
+    protected void drawableStateChanged() {
+        super.drawableStateChanged();
+        if (Ui.touch) invalidate();  // the pressed highlight
+    }
+
+    @Override
     protected void onFocusChanged(boolean focused, int direction, Rect previous) {
         super.onFocusChanged(focused, direction, previous);
         float s = focused ? 1.035f : 1f;
@@ -302,6 +309,13 @@ final class Card extends View implements Images.Target {
             if (story.paid) drawBadge(c, w - pad - badgeWidth(), pad - Ui.dp(2));
         }
         c.restore();
+        if (Ui.touch && isPressed()) {
+            // Like the rail: the card lit, with the accent bar at its edge.
+            fill.setColor(Ui.alpha(style == HERO ? 0xFFFFFFFF : Ui.INK, 0.10f));
+            c.drawRect(0, 0, w, h, fill);
+            fill.setColor(Ui.ACCENT);
+            c.drawRect(0, 0, Ui.px(4), h, fill);
+        }
         if (isFocused()) c.drawRoundRect(bounds.left + 1.5f, bounds.top + 1.5f, bounds.right - 1.5f,
                 bounds.bottom - 1.5f, radius, radius, border);
     }
@@ -370,7 +384,8 @@ final class Card extends View implements Images.Target {
     private void drawBadge(Canvas c, float x, float y) {
         float bw = badgeWidth(), bh = badgePaint.getTextSize() + Ui.px(8);
         fill.setColor(0xCC000000);
-        c.drawRoundRect(x, y, x + bw, y + bh, bh / 2, bh / 2, fill);
+        float r = Ui.touch ? 0 : bh / 2;
+        c.drawRoundRect(x, y, x + bw, y + bh, r, r, fill);
         badgePaint.setColor(0xFFFF5A5F);
         c.drawText("News+", x + Ui.px(6), y + bh - Ui.px(5.5f), badgePaint);
     }

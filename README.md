@@ -11,15 +11,15 @@ device, nothing sent anywhere but your own Mac.
 **You need a Mac** with Apple News, running Apple News Relay on the same network. Broadsheet
 is an unofficial reader; it is not affiliated with Apple.
 
-| Fire TV and Android TV | Windows |
-|---|---|
-| ![Apple News on Fire TV: Broadsheet's front page on a TV, with a rail of sections, a hero story, two briefs and picture cards](docs/tv/front-page.jpg) | Windows screenshots are on their way. |
+| Android phone | Fire TV and Android TV | Windows |
+|---|---|---|
+| ![Apple News front page in Broadsheet on an Android phone: masthead, a strip of sections and a hero story](docs/phone/front-light.jpg) | ![Apple News on Fire TV: Broadsheet's front page on a TV, with a rail of sections, a hero story, two briefs and picture cards](docs/tv/front-page.jpg) | ![Apple News on Windows: Broadsheet's front page in a window, with the section rail, a hero story and picture cards](docs/windows/front.jpg) |
 
 ## Downloads
 
 | | Download | Runs on |
 |---|---|---|
-| Android | [**broadsheet.apk**](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet.apk) | Fire TV, Android TV, Google TV (D-pad remote); Android phones from 0.4.0. Android 7.1 or later |
+| Android | [**broadsheet.apk**](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet.apk) | Android phones and tablets (touch), Fire TV, Android TV, Google TV (D-pad remote): one APK, Android 7.1 or later |
 | Windows | [**broadsheet-windows.zip**](https://github.com/VladislavEkimtcov/broadsheet/releases/latest/download/broadsheet-windows.zip) | Windows 10 and 11 (IoT Enterprise LTSC too), .NET Framework 4.8 (built in) |
 
 These links always point at the [latest release](https://github.com/VladislavEkimtcov/broadsheet/releases/latest);
@@ -36,22 +36,34 @@ These links always point at the [latest release](https://github.com/VladislavEki
 
 ## Apple News on Fire TV and Android TV
 
-A front page and reader built for the remote: a rail of sections on the left, a hero, briefs and
-rows of picture cards, an options panel on the Menu key (save, like or dislike, more from the
+Apple News on Android TV, Google TV and Fire TV: a front page and reader built for the remote: a
+rail of sections on the left, a hero, briefs and rows of picture cards, an options panel on the Menu key (save, like or dislike, more from the
 publisher, text size from 14 to 40 pt, light by day and dark after sunset), videos in stories,
 and *On the Mac*, which carries on with the story open in Apple News on the Mac. Details and
 screenshots: [android/README.md](android/README.md).
 
 ## Apple News on Android phones
 
-The same APK runs on Android phones and tablets with a touch UI from 0.4.0. Until then a phone
-shows the TV's UI.
+The same APK on a phone or tablet gets a touch UI in the same newspaper style: a strip of
+sections along the top, the section in one column (two in landscape), a serif reader you scroll
+with a finger and swipe sideways for the next story, videos full screen, and the options as a
+sheet from ☰ or a long press on a story, with a field for the relay's address. Pull down to
+refresh. Details and more screenshots: [android/README.md](android/README.md#on-a-phone).
+
+| | |
+|---|---|
+| ![Apple News reader on an Android phone: a story's headline, standfirst and lead picture in Broadsheet's serif column](docs/phone/reader.jpg) | ![Broadsheet's options sheet on an Android phone: save the story, like or dislike, more from the publisher, text size](docs/phone/options.jpg) |
 
 ## Apple News on Windows
 
-A Windows desktop port with the same front page, reader and options, for mouse, touchpad and
-keyboard: one `Broadsheet.exe` that runs on what ships with Windows. Details:
+Apple News for PC: a Windows desktop port with the same front page, reader and options, for
+mouse, touchpad and keyboard. One `Broadsheet.exe` that runs on what ships with Windows 10 and 11
+(IoT Enterprise LTSC included), installed per user without admin rights. Details:
 [windows/README.md](windows/README.md).
+
+| | |
+|---|---|
+| ![Apple News on Windows: a story in Broadsheet's reader, with the back arrow and the menu at the top](docs/windows/reader.jpg) | ![Broadsheet for Windows with the options panel open over a story: save, like or dislike, open in the browser, text size](docs/windows/options.jpg) |
 
 ## Setup
 
@@ -71,7 +83,7 @@ keyboard: one `Broadsheet.exe` that runs on what ships with Windows. Details:
 android/     the Android app (Java, bare SDK, no Gradle): one APK for TVs and phones
   src/         shared by TV and phone: relay client, controller, reader, options, player
   tv/src/      the TV's front page (rail, D-pad focus)
-  phone/src/   the phone's front page and touch parts (from 0.4.0)
+  phone/src/   the phone's front page (strip, one column, pull to refresh)
   tests/       CasesTest.java: the shared cases on the JVM
 windows/     the Windows port (C# 5, WPF, .NET Framework 4.8 in-box toolchain)
 assets/      Newsreader fonts (SIL OFL), read by both builds
@@ -114,9 +126,9 @@ artifacts, no release.
 
 ## FAQ
 
-**Is there an Apple News app for Android?** Not from Apple. Broadsheet is an Apple News app for
-Android alternative: it shows the stories from Apple News on your Mac on an Android phone,
-tablet or TV.
+**Is there an Apple News app for Android?** Not from Apple. Broadsheet is an alternative to an
+Apple News app for Android: it shows the stories from Apple News on your Mac on an Android
+phone, tablet or TV.
 
 **Can I get Apple News on Fire TV?** Yes, with Broadsheet: sideload `broadsheet.apk` on a Fire
 TV Stick, Fire TV Cube or Fire TV smart TV. It works the same on Android TV and Google TV.

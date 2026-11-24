@@ -1,13 +1,19 @@
 package io.github.vladislavekimtcov.broadsheet;
 
 import android.app.Activity;
+import android.app.UiModeManager;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
@@ -27,11 +33,16 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Broadsheet: a news reader for Android TV that shows Apple News, by way of Apple News Relay on a
- * Mac. Front page and reader live in one window; the reader slides over the front page, the
- * options panel (Menu) over both, and a story's video over everything.
+ * Broadsheet: a news reader for Android TVs and phones that shows Apple News, by way of Apple
+ * News Relay on a Mac. Front page and reader live in one window; the reader slides over the
+ * front page, the options panel (Menu, or ☰ on a phone) over both, and a story's video over
+ * everything.
+ *
+ * <p>One APK, two front pages: a TV (UI mode television, or no touchscreen) gets {@code Front}
+ * (the rail, for the D-pad) in landscape; anything else {@code Feed} (phone/src) and the touch
+ * modes of the reader, options and player ({@link Ui#touch}). Everything else is shared.
  */
-public final class Main extends Activity implements Front.Listener, Reader.Listener, Player.Listener, Options.Listener,
+public final class Main extends Activity implements FrontView.Listener, Reader.Listener, Player.Listener, Options.Listener,
         Events.Listener {
     /** Seconds the relay may spend getting a story's body from Apple News before answering. */
     private static final int FETCH_WAIT = 14;
@@ -76,7 +87,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     private boolean restAsked, aheadAsked;
     private SharedPreferences prefs;
     private FrameLayout root;
-    private Front front;
+    private FrontView front;
     private Reader reader;
     private Player player;
     private Options options;
@@ -132,11 +143,20 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        boolean tv = isTv();
+        Ui.touch = !tv;
+        Ui.device = tv ? "TV" : "phone";
+        if (tv) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        } else {
+            edgeToEdge();
+        }
         Ui.init(this);
+        String kind = tv ? "Android TV" : "Android";
         try {
-            Net.userAgent = "Broadsheet/" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName + " (Android TV)";
+            Net.userAgent = "Broadsheet/" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName + " (" + kind + ")";
         } catch (PackageManager.NameNotFoundException e) {
-            Net.userAgent = "Broadsheet (Android TV)";
+            Net.userAgent = "Broadsheet (" + kind + ")";
         }
         prefs = getSharedPreferences("reader", MODE_PRIVATE);
         relay = new Relay(this);
@@ -146,7 +166,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         events = new Events(relay, this);
         clientId = prefs.getString("client", null);
         if (clientId == null) {
-            clientId = "tv-" + Long.toHexString(new java.security.SecureRandom().nextLong() & 0xffffffffffL);
+            clientId = (Ui.touch ? "phone-" : "tv-") + Long.toHexString(new java.security.SecureRandom().nextLong() & 0xffffffffffL);
             prefs.edit().putString("client", clientId).apply();
         }
         new Thread(() -> images.prune(150L * 1024 * 1024), "prune").start();
@@ -154,6 +174,16 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         Ui.setLight(wantLight());
         root = new FrameLayout(this);
         setContentView(root);
+        if (Ui.touch) {
+            root.setOnApplyWindowInsetsListener((v, insets) -> {
+                Ui.insetTop = insets.getSystemWindowInsetTop();
+                Ui.insetBottom = insets.getSystemWindowInsetBottom();
+                Ui.insetLeft = insets.getSystemWindowInsetLeft();
+                Ui.insetRight = insets.getSystemWindowInsetRight();
+                applyInsets();
+                return insets.consumeSystemWindowInsets();
+            });
+        }
         buildViews();
 
         relay.cachedFront((page, error) -> {  // feature: front.cache
@@ -171,24 +201,71 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         load();
     }
 
+    /** A TV: the system says so, or there is nothing to touch. */
+    private boolean isTv() {
+        UiModeManager ui = (UiModeManager) getSystemService(UI_MODE_SERVICE);
+        return (ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION)
+                || !getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
+    }
+
+    /** Touch: the page runs under the status bar and the gesture bar, which keep their icons. */
+    private void edgeToEdge() {  // feature: phone.insets
+        Window w = getWindow();
+        w.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        w.setStatusBarColor(0);
+        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        systemBars();
+    }
+
+    private void systemBars() {
+        if (!Ui.touch) return;
+        Window w = getWindow();
+        // A gesture bar floats over the page; a bar of buttons gets the page's own ground under it.
+        boolean buttons = Ui.insetBottom >= Ui.dp(40) || Ui.insetLeft > 0 || Ui.insetRight > 0;
+        w.setNavigationBarColor(buttons || Build.VERSION.SDK_INT < 29 ? Ui.alpha(Ui.PAPER, 0.94f) : 0);
+        int flags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+        if (Ui.light) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            if (Build.VERSION.SDK_INT >= 26) flags |= 0x10;  // SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR (API 26; built against 25)
+        }
+        w.getDecorView().setSystemUiVisibility(flags);
+    }
+
+    private void applyInsets() {
+        systemBars();
+        root.setPadding(Ui.insetLeft, 0, Ui.insetRight, 0);
+        if (front instanceof Insettable) ((Insettable) front).applyInsets();
+        reader.applyInsets();
+        options.applyInsets();
+    }
+
+    /** A view that makes room for the system bars on touch. */
+    interface Insettable {
+        void applyInsets();
+    }
+
     private void buildViews() {
         root.removeAllViews();
         root.setBackgroundColor(Ui.PAPER);
-        front = new Front(this, images, this);
+        front = Ui.touch ? new Feed(this, images, this) : new Front(this, images, this);
         reader = new Reader(this, images, this);
         reader.setTextSizeStep(textStep());
         reader.setVisibility(View.GONE);
         player = new Player(this, this);
         options = new Options(this, this);
-        root.addView(front);
+        root.addView((View) front);
         root.addView(reader);
         root.addView(player);
         root.addView(options);
     }
 
-    /** The text size step; 0.1's four sizes (key "size") map onto the ten of 0.2.1. */
+    /** The text size step; 0.1's four sizes (key "size") map onto the ten of 0.2.1. A phone starts
+     *  at 17 pt, read at arm's length. */
     private int textStep() {
         if (prefs.contains("text")) return prefs.getInt("text", Reader.STANDARD);
+        if (Ui.touch) return 2;
         int old = prefs.getInt("size", 1);
         return Math.max(0, Math.min(Reader.SIZES.length - 1, Reader.STANDARD - 1 + old));
     }
@@ -236,7 +313,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             front.showMessage(text);
             return;
         }
-        showMessage(text + "\n\nTrying again every 30 seconds. Press OK to try now.");
+        showMessage(text + (Ui.touch ? "\n\nTrying again every 30 seconds. Tap to try now."
+                : "\n\nTrying again every 30 seconds. Press OK to try now."));
         root.removeCallbacks(retry);
         root.postDelayed(retry, RETRY_MS);
     }
@@ -257,7 +335,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 loading = false;
                 if (url == null) {
                     fail(error + "\n\nStart Apple News Relay on the Mac (apple-news-relay serve --host 0.0.0.0), "
-                            + "or put url=http://<mac>:8787 in relay.conf in this app's files folder.");
+                            + (Ui.touch ? "or enter its address under ☰ → Relay address."
+                            : "or put url=http://<mac>:8787 in relay.conf in this app's files folder."));
                     return;
                 }
                 load();
@@ -789,6 +868,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         boolean light = wantLight();
         if (light == Ui.light || player.playing()) return;
         Ui.setLight(light);
+        systemBars();
         rebuild();
     }
 
@@ -817,6 +897,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             if (article != null) reader.setArticle(article, null);
             reader.restoreFraction(fraction);
         }
+        if (Ui.touch) applyInsets();
         if (optionsOpen) {
             openOptions(target, false);
             options.select(optionIndex);
@@ -939,6 +1020,21 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
                 continueReading(unfinished);
             };
         }
+        Options.Tile webTile = null;
+        if (Ui.touch && s != null && s.link != null) {
+            // A phone has a browser at hand: the publisher's own page, for links and embeds.
+            final String link = s.link;
+            webTile = new Options.Tile("↗", "Open in the browser");  // feature: win.browser
+            webTile.hint = "The publisher's page, with its links and embeds";
+            webTile.onOk = () -> {
+                options.close();
+                try {
+                    startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link)));
+                } catch (RuntimeException e) {
+                    Toast.makeText(this, "No browser to open it in.", Toast.LENGTH_LONG).show();
+                }
+            };
+        }
         refreshTile = new Options.Tile("↻", "Refresh now");  // feature: opt.refresh
         refreshTile.onOk = this::refreshNow;
         refreshTile.onStep = d -> {
@@ -952,15 +1048,18 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         tiles.add(reactTile);
         tiles.add(unreadTile);
         tiles.add(moreTile);
+        if (webTile != null) tiles.add(webTile);
         tiles.add(sizeTile);
         tiles.add(themeTile);
         tiles.add(readTile);
         if (continueTile != null) tiles.add(continueTile);
         tiles.add(refreshTile);
         fillTiles();
-        String about = s == null ? "Choose a story to save it, like it or find more like it."
+        String about = s == null ? (Ui.touch ? "Long-press a story to save it, like it or find more like it."
+                : "Choose a story to save it, like it or find more like it.")
                 : (s.channel != null ? s.channel + "  ·  " : "") + s.title;
         options.open(tiles, about, slide);
+        if (Ui.touch) options.addField(relayField());
         relay.handoff((h, error) -> {  // feature: opt.handoff
             if (!options.isOpen() || h == null) return;
             final Story mac = Story.from(h.optJSONObject("article"));
@@ -972,7 +1071,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
             t.vectorIcon = Icons.LAPTOP;
             long seen = Dates.parse(Story.str(h, "seen_at"));
             t.value = h.optBoolean("on_screen") ? "now" : Dates.ago(seen, System.currentTimeMillis());
-            t.hint = mac.title + "  ·  OK reads it here";
+            t.hint = mac.title + (Ui.touch ? "  ·  Tap to read it here" : "  ·  OK reads it here");
             t.onOk = () -> {
                 options.close();
                 continueReading(mac);
@@ -1004,7 +1103,8 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     private void fillTiles() {
         Story s = target;
         boolean has = s != null;
-        String pick = "Choose a story first";
+        String pick = Ui.touch ? "Long-press a story first" : "Choose a story first";
+        String ok = Ui.touch ? "Tap" : "OK";
 
         saveTile.enabled = has && !saveBusy;
         boolean saved = has && isSaved(s);
@@ -1012,7 +1112,7 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         saveTile.label = !has ? "Save story" : saveBusy ? (saved ? "Removing…" : "Saving…") : saved ? "Saved" : "Save story";
         saveTile.value = saved && !saveBusy ? "✓" : "";
         saveTile.hint = !has ? pick : saveBusy ? "Apple News on the Mac is doing it" : saveError != null ? saveError
-                : saved ? "In Saved Stories on the Mac  ·  OK takes it out" : "OK puts it in Saved Stories on the Mac";
+                : saved ? "In Saved Stories on the Mac  ·  " + ok + " takes it out" : ok + " puts it in Saved Stories on the Mac";
         if (saveBusy) saveTile.enabled = true;  // still selectable; OK waits
 
         String r = has ? library.reaction(s.id) : null;
@@ -1020,23 +1120,24 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         reactTile.checked[0] = "like".equals(r);
         reactTile.checked[1] = "dislike".equals(r);
         reactTile.value = reactBusy ? "Sending…" : "like".equals(r) ? "Liked" : "dislike".equals(r) ? "Disliked" : "";
-        reactTile.hint = !has ? pick : reactError != null ? reactError : r != null ? "OK on it again takes it back"
+        reactTile.hint = !has ? pick : reactError != null ? reactError : r != null ? (Ui.touch ? "Tap it again to take it back" : "OK on it again takes it back")
                 : "Apple News suggests more or fewer like it";
 
         boolean read = has && library.isRead(s.id) && !s.id.equals(keptUnread);
         unreadTile.enabled = has;
         unreadTile.icon = read ? "○" : "●";
         unreadTile.label = read ? "Mark as unread" : "Mark as read";
-        unreadTile.hint = !has ? pick : read ? "Read on this TV  ·  OK makes it new again"
-                : "dim".equals(readMode()) ? "OK fades it on the front page" : "hide".equals(readMode())
-                ? "OK hides it from the front page" : "OK counts it as read";
+        unreadTile.hint = !has ? pick : read ? "Read on this " + Ui.device + "  ·  " + ok + " makes it new again"
+                : "dim".equals(readMode()) ? ok + " fades it on the front page" : "hide".equals(readMode())
+                ? ok + " hides it from the front page" : ok + " counts it as read";
 
         moreTile.enabled = has && !moreChoices.isEmpty();
         String[] choice = moreTile.enabled ? moreChoices.get(moreIndex) : null;
         moreTile.label = choice != null ? choice[0] : "More like this";
         moreTile.value = moreChoices.size() > 1 ? (moreIndex + 1) + " of " + moreChoices.size() : "";
         moreTile.hint = !has ? pick : moreBusy ? "Loading…" : moreError != null ? moreError
-                : moreChoices.size() > 1 ? "◀ ▶ more choices  ·  OK shows them" : "OK shows them";
+                : moreChoices.size() > 1 ? (Ui.touch ? "‹ › more choices  ·  Tap shows them" : "◀ ▶ more choices  ·  OK shows them")
+                : ok + " shows them";
 
         int step = reader.sizeStep();
         sizeTile.position = step;
@@ -1046,11 +1147,12 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
         sizeTile.hint = null;
 
         themeTile.value = THEME_NAMES[indexOf(THEMES, themeMode())];
-        themeTile.hint = "auto".equals(themeMode()) ? sunHint() : "◀ Automatic follows sunset";
+        themeTile.hint = "auto".equals(themeMode()) ? sunHint() : Ui.touch ? "Automatic follows sunset" : "◀ Automatic follows sunset";
 
         readTile.value = READ_NAMES[indexOf(READ_MODES, readMode())];
         int n = library.readCount();
-        readTile.hint = (n == 0 ? "None yet" : n + (n == 1 ? " story" : " stories") + " read on this TV") + "  ·  ◀ ▶";
+        readTile.hint = (n == 0 ? "None yet" : n + (n == 1 ? " story" : " stories") + " read on this " + Ui.device)
+                + (Ui.touch ? "" : "  ·  ◀ ▶");
 
         if (continueTile != null) {
             Story u = library.unfinished();
@@ -1060,7 +1162,13 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
 
         refreshTile.value = loadedAt > 0 ? "Updated " + time(loadedAt) : "";
         refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
-                : "Automatically " + AUTO_REFRESH_NAMES[autoRefreshStep()] + "  ·  ◀ ▶";
+                : "Automatically " + AUTO_REFRESH_NAMES[autoRefreshStep()] + (Ui.touch ? "  ·  ‹ › how often" : "  ·  ◀ ▶");
+        if (Ui.touch) {
+            // The ‹ › next to the value change how often, so the value says that.
+            refreshTile.value = new String[] {"25 min", "Hourly", "Off"}[autoRefreshStep()];
+            refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
+                    : (loadedAt > 0 ? "Updated " + time(loadedAt) + "  ·  " : "") + "Tap refreshes now";
+        }
     }
 
     /** Read on this TV or new again: what dims (or hides) it on the front page. */
@@ -1190,8 +1298,95 @@ public final class Main extends Activity implements Front.Listener, Reader.Liste
     }
 
     @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent e) {
+        lastKeyAt = SystemClock.uptimeMillis();  // a finger on the page: hold live reloads too
+        return super.dispatchTouchEvent(e);
+    }
+
+    /** Touch: Back closes the top thing (video, options, story); on the front page it leaves. */
+    private boolean back() {  // feature: phone.back
+        if (player.playing()) player.closeNow();
+        else if (options.isOpen()) options.close();
+        else if (reader.getVisibility() == View.VISIBLE) onClose();
+        else return false;
+        return true;
+    }
+
+    @Override
+    public void onMenu() {
+        openOptions(optionsTarget(), true);
+    }
+
+    @Override
+    public void onRefresh() {  // feature: phone.pull_refresh
+        if (!front.hasContent()) showMessage("Looking for Apple News Relay on your network…");
+        load();
+        if (relay.known()) refreshNow();
+    }
+
+    /** Touch: the relay's address, as relay.conf would hold it; empty finds it by itself. */
+    private View relayField() {  // feature: phone.relay_field
+        android.widget.LinearLayout box = new android.widget.LinearLayout(this);
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setPadding(Ui.dp(16), Ui.dp(14), Ui.dp(16), Ui.dp(12));
+        box.setBackgroundColor(Ui.alpha(Ui.INK, 0.045f));
+        android.widget.TextView label = Ui.text(this, 17, Ui.INK, Ui.sansMedium);
+        label.setText("Relay address");
+        box.addView(label);
+        final android.widget.EditText edit = new android.widget.EditText(this);
+        edit.setSingleLine(true);
+        edit.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        edit.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        edit.setTextSize(16);
+        edit.setTypeface(Ui.sans);
+        edit.setTextColor(Ui.INK);
+        edit.setHintTextColor(Ui.FAINT);
+        edit.setHint("Automatic");
+        edit.setText(relay.manualUrl());
+        edit.setBackground(new android.graphics.drawable.ColorDrawable(Ui.alpha(Ui.INK, 0.06f)));
+        edit.setPadding(Ui.dp(10), Ui.dp(10), Ui.dp(10), Ui.dp(10));
+        android.widget.LinearLayout.LayoutParams el = new android.widget.LinearLayout.LayoutParams(-1, -2);
+        el.topMargin = Ui.dp(10);
+        box.addView(edit, el);
+        final android.widget.TextView hint = Ui.text(this, 13, Ui.MUTED, Ui.sans);
+        hint.setLineSpacing(0, 1.2f);
+        hint.setText(relayHint());
+        android.widget.LinearLayout.LayoutParams hl = new android.widget.LinearLayout.LayoutParams(-1, -2);
+        hl.topMargin = Ui.dp(8);
+        box.addView(hint, hl);
+        edit.setOnEditorActionListener((v, action, ev) -> {
+            String now = relay.setManual(edit.getText().toString());
+            edit.setText(now);
+            ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                    .hideSoftInputFromWindow(edit.getWindowToken(), 0);
+            edit.clearFocus();
+            hint.setText(now.isEmpty() ? "Looking for the relay on the network…" : "Trying " + now + "…");
+            events.stop();
+            events.start();
+            loading = false;
+            load();
+            return true;
+        });
+        return box;
+    }
+
+    private String relayHint() {
+        if (!relay.known()) return "Empty: found by itself (Bonjour, or a look around the network). Or type the Mac's address, e.g. 192.168.1.20";
+        return (relay.manualUrl().isEmpty() ? "Found by itself: " + relay.where() + "  ·  " : "Set by hand  ·  ")
+                + "Empty: find it by itself";
+    }
+
+    @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         lastKeyAt = SystemClock.uptimeMillis();
+        if (Ui.touch) {
+            // Keys go where Android sends them (the relay field takes typing); Back is ours.
+            if (e.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                if (e.getAction() == KeyEvent.ACTION_UP && !e.isCanceled() && !back()) moveTaskToBack(true);
+                return true;
+            }
+            return super.dispatchKeyEvent(e);
+        }
         if (player.playing()) {
             if (player.onKey(e)) return true;
             return super.dispatchKeyEvent(e);

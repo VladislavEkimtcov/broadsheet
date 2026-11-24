@@ -11,6 +11,8 @@ import java.util.List;
 /** One headline as the relay lists it: what a card needs, nothing more. */
 final class Story {
     final String id, title, excerpt, byline, channel, channelId, channelLogo, image;
+    /** The publisher's page (or Apple News's), for "Open in the browser" on a phone. */
+    final String link;
     final int imageWidth, imageHeight;
     private final String[] thumbUrls;
     private final int[] thumbWidths;
@@ -28,6 +30,7 @@ final class Story {
         id = o.optString("id");
         title = o.optString("title");
         excerpt = str(o, "excerpt");
+        link = str(o, "url") != null ? str(o, "url") : str(o, "apple_news_url");
         byline = str(o, "byline");
         JSONObject ch = o.optJSONObject("channel");
         channel = ch == null ? null : str(ch, "name");

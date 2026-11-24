@@ -24,26 +24,7 @@ import java.util.Locale;
  * and Saved Stories), and the chosen section as a hero, two briefs and rows of three tiles.
  * Moving along the rail switches section after a short pause, so holding Down skims past.
  */
-final class Front extends FrameLayout implements Scroller.Watcher {  // feature: front.rail
-    interface Listener {
-        void onOpen(Relay.Section section, int index);
-
-        /** Shown faded: read on this TV, with "Stories you've read" set to dim. */
-        boolean isDimmed(String storyId);
-
-        /** A card got focus (to fetch its story ahead if it stays there). */
-        void onFocusStory(Story story, int index);
-
-        /** Focus came to a section on the rail ({@code direction}: +1 down, -1 up, 0 first time). */
-        void onRailFocus(int index, int direction);
-
-        /** Focus stayed on a section of the rail for a moment: the reader is looking at it. */
-        void onRailRest(int index);
-
-        /** Focus reached the last rows of a section that has more to load. */
-        void onNearEnd(Relay.Section section);
-    }
-
+final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  // feature: front.rail
     /** Resting on the rail this long counts as looking at the section. */
     private static final int RAIL_REST_MS = 375;
 
@@ -145,17 +126,20 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         addView(message, ml);
     }
 
-    boolean hasContent() {
+    @Override
+    public boolean hasContent() {
         return !sections.isEmpty();
     }
 
-    void setStatus(String text) {
+    @Override
+    public void setStatus(String text) {
         if (TextUtils.equals(status.getText(), text)) return;  // nothing to redraw
         status.setText(text);
     }
 
     /** Shown instead of the grid when there is nothing to show. */
-    void showMessage(String text) {
+    @Override
+    public void showMessage(String text) {
         if (!sections.isEmpty()) {
             setStatus(text);
             return;
@@ -166,7 +150,8 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     /** New sections. Keeps the current section (by id) and, if asked, the focused story. */
-    void setSections(List<Relay.Section> list, boolean keepFocus) {
+    @Override
+    public void setSections(List<Relay.Section> list, boolean keepFocus) {
         String currentId = current >= 0 && current < sections.size() ? sections.get(current).id : null;
         // Moving down the rail when a new page comes: stay on the section focus was on, not the
         // one still showing, so no key press is lost.
@@ -178,21 +163,25 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     /** The story whose card has focus, or null (focus on the rail). */
-    Story focusedStory() {
+    @Override
+    public Story focusedStory() {
         View f = findFocus();
         return f instanceof Card ? ((Card) f).story : null;
     }
 
-    boolean railFocused() {
+    @Override
+    public boolean railFocused() {
         return findFocus() instanceof RailItem;
     }
 
-    String statusText() {
+    @Override
+    public String statusText() {
         return status.getText().toString();
     }
 
     /** Opens a section by id and focuses its first story. */
-    void open(String sectionId) {
+    @Override
+    public void open(String sectionId) {
         for (int i = 0; i < sections.size(); i++) {
             if (sections.get(i).id.equals(sectionId)) {
                 current = -1;
@@ -206,12 +195,14 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     /** Fades or restores cards after a story was read or the setting changed. */
-    void refreshDim() {
+    @Override
+    public void refreshDim() {
         for (Card c : cards) c.setDim(listener.isDimmed(c.story.id));
     }
 
     /** Sections with a given section and story chosen: after the views were built again. */
-    void restore(List<Relay.Section> list, String currentId, String focusedStory, boolean railFocused, boolean keepFocus) {
+    @Override
+    public void restore(List<Relay.Section> list, String currentId, String focusedStory, boolean railFocused, boolean keepFocus) {
         sections = list;
         message.setVisibility(GONE);
         page.setVisibility(VISIBLE);
@@ -342,7 +333,8 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
 
     /** More stories arrived for a section (its next page): their cards go under the others, if
      *  it's the one on screen. Focus and scroll stay where they are. */
-    void append(Relay.Section s) {
+    @Override
+    public void append(Relay.Section s) {
         if (current < 0 || current >= sections.size() || sections.get(current) != s || built >= s.stories.size()) return;
         Context c = getContext();
         long now = System.currentTimeMillis();
@@ -377,13 +369,15 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     /** A tile's width in pixels (three to a row). */
-    int tileWidth() {
+    @Override
+    public int tileWidth() {
         int width = getResources().getDisplayMetrics().widthPixels - Ui.dp(RAIL_DP) - Ui.dp(SIDE_DP) * 2;
         return (width - Ui.dp(GAP_DP) * 2) / 3;
     }
 
     /** The hero card's size in pixels, so its picture can be decoded before the section shows. */
-    int[] heroSize() {
+    @Override
+    public int[] heroSize() {
         return new int[] {tileWidth() * 2 + Ui.dp(GAP_DP), Ui.dp(300)};
     }
 
@@ -401,7 +395,8 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
     }
 
     /** Back from the reader: focus the story that was open (it may have moved with Left/Right). */
-    void focusStory(int index) {
+    @Override
+    public void focusStory(int index) {
         for (Card c : cards) {
             if (c.index == index) {
                 c.requestFocus();
@@ -410,7 +405,8 @@ final class Front extends FrameLayout implements Scroller.Watcher {  // feature:
         }
     }
 
-    Relay.Section currentSection() {
+    @Override
+    public Relay.Section currentSection() {
         return current >= 0 && current < sections.size() ? sections.get(current) : null;
     }
 

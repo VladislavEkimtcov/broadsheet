@@ -94,7 +94,7 @@ renumbered when the ports started sharing one version).
 |---|---|---|---|---|---|
 | `relay.bonjour` | Find the relay by Bonjour (`_newsrelay._tcp`) | ✅ | ✅ 0.4.0 | — | Windows has no Bonjour built in |
 | `relay.subnet` | Find the relay by asking port 8787 on its own subnets | ✅ | ✅ 0.4.0 | ✅ |  |
-| `relay.conf` | `relay.conf` with `url=` and `token=` points at the relay by hand | ✅ | ✅ 0.4.0 | ✅ | TV: app's files folder. Windows: `%APPDATA%\Broadsheet`. Phone: also the Relay address field (`phone.relay_field`), which writes the same file |
+| `relay.conf` | `relay.conf` with `url=` and `token=` points at the relay by hand | ✅ | ✅ 0.4.0 | ✅ | TV: app's files folder. Windows: `%APPDATA%\Broadsheet`. All three: also the Relay address entry in Options (`phone.relay_field`), which writes the same file |
 | `relay.events` | Reads the relay's event stream (Server-Sent Events) and reconnects by itself | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | Cases: `spec/cases/sse.json` |
 | `library.local` | What you read, how far, likes: `library.json` on the device only | ✅ | ✅ 0.4.0 | ✅ |  |
 
@@ -108,7 +108,7 @@ renumbered when the ports started sharing one version).
 | `phone.swipe` | Swipe sideways in a story for the previous or next one | — | ✅ 0.4.0 | — | TV: Left/Right. Windows: Left/Right keys |
 | `phone.long_press` | Long press on a card: Options for that story | — | ✅ 0.4.0 | — | TV: Menu on the focused card. Windows: hover a card and press M |
 | `phone.sheet` | Options as a sheet from the bottom: tap a tile, ‹ › for values, drag the text size slider, tap the shade to close | — | ✅ 0.4.0 | — | TV and Windows: the panel from the right (`opt.panel`) |
-| `phone.relay_field` | Relay address in Options (empty: found by itself); writes relay.conf | — | ✅ 0.4.0 | ⏳ 0.4.0 | TV: relay.conf pushed with adb. Windows could have it: typing an address is easy there |
+| `phone.relay_field` | Relay address, the last entry in Options (empty: found by itself); writes relay.conf | ✅ | ✅ 0.4.0 | ✅ | TV: a tile showing the address (or Automatic); OK opens a box with the on-screen keyboard, Done sets it, Back leaves it. Windows: a tile; Enter or a click opens a pop-up with a text box, Enter sets it, Esc leaves it. Phone: a field under the tiles |
 | `phone.insets` | Edge to edge under the status bar and gesture bar, light or dark icons with the page; rotating keeps the place | — | ✅ 0.4.0 | — | TV: full screen, landscape. Windows: a window |
 | `phone.back` | System Back closes the video, the options, the story, then leaves the app | — | ✅ 0.4.0 | — | TV: the remote's Back, in each view, and on the front page `front.back`. Windows: Esc, Backspace, the mouse's back button |
 | `phone.offline` | "The Mac isn't answering" as a note over the cached page, which stays readable; a tap tries again | — | ✅ 0.4.0 | — | TV and Windows: the rail's status line says it |

@@ -119,8 +119,9 @@ your network by itself.
    wired networks, or with a VPN app on the TV) by asking port 8787 on its own subnet. Until it
    finds one it tries again every 30 seconds; OK tries at once.
 
-If the relay runs on another port or subnet, point the app at it by hand: put a `relay.conf` in
-the app's files folder
+If the relay runs on another port or subnet, point the app at it by hand: **Options → Relay
+address** (the last entry; on the TV, OK brings up the keyboard; empty goes back to finding it
+by itself). That writes a `relay.conf` in the app's files folder, which you can also push
 
 ```
 url=http://192.168.1.20:8787

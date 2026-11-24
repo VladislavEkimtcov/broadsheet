@@ -7,6 +7,11 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- TV and Windows: **Relay address** is the last entry in Options, as on the phone. It shows the
+  address set by hand or "Automatic" (with where it was found). On the TV, OK opens a box with
+  the on-screen keyboard; on Windows, Enter or a click opens a pop-up with a text box. Empty goes
+  back to finding the relay by itself; "10.0.0.4" is read as http://10.0.0.4:8787. It writes the
+  same relay.conf the app already read.
 - Windows: Refresh now's ‹ › stay put as the value changes. They were placed around the value
   itself, so going from "25 min" to "Off" moved them out from under the mouse; they now sit
   around the widest value, with the value centred between them.

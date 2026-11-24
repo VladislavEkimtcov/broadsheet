@@ -5,6 +5,7 @@ using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Windows.Threading;
 
@@ -162,6 +163,40 @@ namespace Broadsheet
                     token = v;
                 }
             }
+        }
+
+        /// <summary>The address set by hand in relay.conf, or "" when the relay is found by itself.</summary>
+        public string ManualUrl { get { return origin == "relay.conf" && baseUrl != null ? baseUrl : ""; } }
+
+        /// <summary>
+        /// Sets the address by hand (relay.conf, the file the other ports read too), or with an empty one
+        /// goes back to finding the relay by itself. "10.0.0.4" is taken as http://10.0.0.4:8787. Returns
+        /// the address now used, or "" for automatic.
+        /// </summary>
+        public string SetManual(string typed)  // feature: phone.relay_field
+        {
+            string url = (typed ?? "").Trim().TrimEnd('/');
+            if (url.Length > 0)
+            {
+                if (!url.StartsWith("http://") && !url.StartsWith("https://")) url = "http://" + url;
+                if (!url.Substring(url.IndexOf("//") + 2).Contains(":")) url = url + ":" + PORT;
+            }
+            StringBuilder b = new StringBuilder();
+            if (url.Length > 0) b.Append("url=").Append(url).Append('\n');
+            if (!string.IsNullOrEmpty(token)) b.Append("token=").Append(token).Append('\n');
+            try
+            {
+                if (b.Length == 0) File.Delete(ConfigPath);
+                else Paths.WriteAtomic(ConfigPath, b.ToString());
+            }
+            catch (Exception) { }  // kept for this run only
+            prefs.Set("relay_url", null);
+            frontEtag = null;
+            legacy = false;
+            noInterest = false;
+            baseUrl = url.Length > 0 ? url : null;
+            origin = url.Length > 0 ? "relay.conf" : "";
+            return url;
         }
 
         void Post<T>(Done<T> done, T value, string error)

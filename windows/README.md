@@ -58,7 +58,7 @@ release zip) or from `bin\`.
 |---|---|
 | `%APPDATA%\Broadsheet\settings.conf` | settings (key=value) |
 | `%APPDATA%\Broadsheet\library.json` | what you've read and how far, likes; stays on this machine |
-| `%APPDATA%\Broadsheet\relay.conf` | optional: `url=http://<mac>:8787` and `token=...` |
+| `%APPDATA%\Broadsheet\relay.conf` | optional: `url=http://<mac>:8787` and `token=...`; Options → Relay address writes it |
 | `%LOCALAPPDATA%\Broadsheet\` | the last front page, pictures (`img`, 150 MB, least used out first), `broadsheet.log` (startup timings, `front 304`, `open … ms kept here`) |
 | `%LOCALAPPDATA%\Broadsheet\bodies` | stories opened or headed for (8 MB, 400 stories, two weeks), so they open at once, even while the Mac sleeps |
 

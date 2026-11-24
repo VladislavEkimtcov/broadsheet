@@ -188,6 +188,12 @@ namespace Broadsheet
         readonly List<TileView> popupViews = new List<TileView>();
         int popupSelected;
         bool popupOpen;
+        // The pop-up holding one text box instead of rows (the relay address).
+        readonly StackPanel fieldPanel = new StackPanel { Visibility = Visibility.Collapsed };
+        readonly TextBox fieldBox;
+        readonly TextBlock fieldNote;
+        Func<string, string> fieldDone;
+        IInputElement fieldFocusBefore;
 
         public Options(IListener listener)
         {
@@ -236,6 +242,23 @@ namespace Broadsheet
             DockPanel.SetDock(popupHeading, Dock.Top);
             pinner.Children.Add(popupHeading);
             popupScroll.Content = popupColumn;
+            // feature: phone.relay_field
+            fieldBox = new TextBox
+            {
+                FontFamily = Ui.Sans.FontFamily, FontSize = 16, Foreground = Ui.Brush(Ui.INK), Background = Ui.Brush(Ui.Alpha(Ui.INK, 0.06)),
+                CaretBrush = Ui.Brush(Ui.INK), BorderThickness = new Thickness(0), Padding = new Thickness(10, 9, 10, 9),
+                FocusVisualStyle = null
+            };
+            // The box's own border turns system blue on focus; a red rule under it instead.
+            fieldPanel.Children.Add(new Border { BorderThickness = new Thickness(0, 0, 0, 2), BorderBrush = Ui.Brush(Ui.ACCENT), Child = fieldBox });
+            fieldNote = new TextBlock
+            {
+                FontFamily = Ui.Sans.FontFamily, FontSize = 13, Foreground = Ui.Brush(Ui.MUTED), TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 10, 0, 0)
+            };
+            fieldPanel.Children.Add(fieldNote);
+            DockPanel.SetDock(fieldPanel, Dock.Top);
+            pinner.Children.Add(fieldPanel);
             pinner.Children.Add(popupScroll);
             popup = new Border
             {
@@ -273,12 +296,40 @@ namespace Broadsheet
             Refresh();
         }
 
+        /// <summary>
+        /// Opens the pop-up with a text box holding text: Enter hands what's typed to done (which
+        /// returns the note to show after) and closes it; Esc closes it and leaves things as they were.
+        /// </summary>
+        public void OpenField(string title, string text, string note, Func<string, string> done)  // feature: phone.relay_field
+        {
+            OpenPopup(title, new List<Tile>());
+            fieldDone = done;
+            fieldNote.Text = note;
+            fieldBox.Text = text ?? "";
+            popupScroll.Visibility = Visibility.Collapsed;
+            fieldPanel.Visibility = Visibility.Visible;
+            fieldFocusBefore = Keyboard.FocusedElement;
+            Dispatcher.BeginInvoke(new Action(() => { fieldBox.Focus(); fieldBox.SelectAll(); }),
+                System.Windows.Threading.DispatcherPriority.Input);
+        }
+
+        bool FieldOpen { get { return popupOpen && fieldDone != null; } }
+
         public bool IsPopupOpen { get { return popupOpen; } }
 
         public void ClosePopup()
         {
             if (!popupOpen) return;
             popupOpen = false;
+            if (fieldDone != null)
+            {
+                fieldDone = null;
+                fieldPanel.Visibility = Visibility.Collapsed;
+                popupScroll.Visibility = Visibility.Visible;
+                if (fieldFocusBefore != null) fieldFocusBefore.Focus();
+                else Keyboard.ClearFocus();
+                fieldFocusBefore = null;
+            }
             popupShade.BeginAnimation(OpacityProperty, null);
             popup.BeginAnimation(OpacityProperty, null);
             popupShade.Visibility = Visibility.Collapsed;
@@ -458,6 +509,23 @@ namespace Broadsheet
         public bool OnKey(Key k, bool repeat)
         {
             touched = true;
+            if (FieldOpen)
+            {
+                // The text box takes the typing; Enter sets it, Esc leaves it.
+                if (k == Key.Escape) { if (!repeat) ClosePopup(); return true; }
+                if (k == Key.Enter)
+                {
+                    if (!repeat)
+                    {
+                        Func<string, string> done = fieldDone;
+                        string typed = fieldBox.Text;
+                        ClosePopup();
+                        done(typed);
+                    }
+                    return true;
+                }
+                return false;
+            }
             if (popupOpen) return OnPopupKey(k, repeat);
             Tile t = selected < tiles.Count ? tiles[selected] : null;
             switch (k)
@@ -666,6 +734,11 @@ namespace Broadsheet
                     // A drawn › at the edge: this one opens a pop-up.
                     Icons.Draw(dc, Icons.RIGHT, right - 20, top - 1, 24, fg);
                     taken = 24;
+                    if (v.Length > 0)
+                    {
+                        dc.DrawText(val, new Point(right - 30 - val.Width, top));
+                        taken += 6 + val.Width;
+                    }
                 }
                 else
                 {

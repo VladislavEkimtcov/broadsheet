@@ -62,7 +62,7 @@ namespace Broadsheet
 
         // the options panel's state
         Story target;
-        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, webTile;
+        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, webTile, relayTile;
         string keptUnread;
         Story reading;
         /// <summary>More stories like this: {title, path, kind, id} per choice, for the story in Options.</summary>
@@ -1135,6 +1135,22 @@ namespace Broadsheet
             tiles.Add(readTile);
             if (continueTile != null) tiles.Add(continueTile);
             tiles.Add(refreshTile);
+            relayTile = new Options.Tile("⌂", "Relay address")  // feature: phone.relay_field
+            {
+                Opens = true,
+                OnOk = () => options.OpenField("Relay address", relay.ManualUrl.Replace("http://", "").Replace("https://", ""),
+                    "Empty: found by itself. Or the Mac's address, e.g. 192.168.1.20. Enter sets it, Esc leaves it.", typed =>
+                    {
+                        relay.SetManual(typed);
+                        events.Stop();
+                        events.Start();
+                        loading = false;
+                        Load();
+                        FillOptions();
+                        return null;
+                    })
+            };
+            tiles.Add(relayTile);
             FillTiles();
             string about = s == null ? "Choose a story to save it, like it or find more like it."
                 : (s.Channel != null ? s.Channel + "  ·  " : "") + s.Title;
@@ -1250,6 +1266,13 @@ namespace Broadsheet
             // ‹ how often › beside the label, like the phone; a click elsewhere refreshes now.
             refreshTile.Value = REFRESH_NAMES[AutoRefreshStep];
             refreshTile.Hint = refreshing ? "Refreshing Apple News on the Mac…" : loadedAt > 0 ? "Updated " + Dates.Time(loadedAt) : null;
+
+            if (relayTile != null)
+            {
+                string manual = relay.ManualUrl.Replace("http://", "").Replace("https://", "");
+                relayTile.Value = manual.Length == 0 ? "Automatic" : manual;
+                relayTile.Hint = !relay.Known ? "Looking for it on the network…" : manual.Length == 0 ? "Found by itself: " + relay.Where : "Set by hand";
+            }
         }
 
         /// <summary>Read here or new again: what dims (or hides) it on the front page.</summary>

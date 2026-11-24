@@ -106,7 +106,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
 
     // the options panel's state
     private Story target;
-    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile;
+    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, relayTile;
     /** The open story was marked unread: leaving it mustn't count it as read again. */
     private String keptUnread;
     /** The story on screen in the reader, or null while the front page shows. */
@@ -1056,12 +1056,20 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         tiles.add(readTile);
         if (continueTile != null) tiles.add(continueTile);
         tiles.add(refreshTile);
+        relayTile = null;
+        if (!Ui.touch) {
+            // The TV: the last tile; OK opens a box with the keyboard (the phone has the field itself).
+            relayTile = new Options.Tile("⌂", "Relay address");  // feature: phone.relay_field
+            relayTile.opens = true;
+            relayTile.onOk = this::editRelay;
+            tiles.add(relayTile);
+        }
         fillTiles();
         String about = s == null ? (Ui.touch ? "Long-press a story to save it, like it or find more like it."
                 : "Choose a story to save it, like it or find more like it.")
                 : (s.channel != null ? s.channel + "  ·  " : "") + s.title;
         options.open(tiles, about, slide);
-        if (Ui.touch) options.addField(relayField());
+        if (Ui.touch) options.addField(relayField(null));
         relay.handoff((h, error) -> {  // feature: opt.handoff
             if (!options.isOpen() || h == null) return;
             final Story mac = Story.from(h.optJSONObject("article"));
@@ -1154,6 +1162,11 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         refreshTile.value = loadedAt > 0 ? "Updated " + time(loadedAt) : "";
         refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
                 : "Automatically " + AUTO_REFRESH_NAMES[autoRefreshStep()] + (Ui.touch ? "  ·  ‹ › how often" : "  ·  ◀ ▶");
+        if (relayTile != null) {
+            String manual = relay.manualUrl().replaceFirst("^https?://", "");
+            relayTile.value = manual.isEmpty() ? "Automatic" : manual;
+            relayTile.hint = !relay.known() ? "Not found yet" : manual.isEmpty() ? "Found by itself: " + relay.where() : "Set by hand";
+        }
         if (Ui.touch) {
             // The ‹ › next to the value change how often, so the value says that.
             refreshTile.value = new String[] {"25 min", "Hourly", "Off"}[autoRefreshStep()];
@@ -1385,7 +1398,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     }
 
     /** Touch: the relay's address, as relay.conf would hold it; empty finds it by itself. */
-    private View relayField() {  // feature: phone.relay_field
+    private View relayField(final Runnable done) {  // feature: phone.relay_field
         android.widget.LinearLayout box = new android.widget.LinearLayout(this);
         box.setOrientation(android.widget.LinearLayout.VERTICAL);
         box.setPadding(Ui.dp(16), Ui.dp(14), Ui.dp(16), Ui.dp(12));
@@ -1425,9 +1438,35 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             events.start();
             loading = false;
             load();
+            if (done != null) done.run();
             return true;
         });
         return box;
+    }
+
+    /** The TV: the phone's relay field in a box over Options, with the on-screen keyboard. OK on
+     *  the keyboard (Done) sets it and closes the box; Back leaves it as it was. */
+    private void editRelay() {  // feature: phone.relay_field
+        final android.app.Dialog d = new android.app.Dialog(this);
+        d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        View field = relayField(d::dismiss);
+        field.setBackgroundColor(Ui.PAPER);
+        field.setPadding(Ui.dp(24), Ui.dp(20), Ui.dp(24), Ui.dp(18));
+        d.setContentView(field, new android.view.ViewGroup.LayoutParams(Ui.dp(520), -2));
+        android.view.Window w = d.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Ui.PAPER));
+            w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        d.setOnDismissListener(x -> fillOptions());
+        // The Fire TV keyboard ignores "show on open"; ask for it once the box has focus, as a
+        // second OK on the field would.
+        final View edit = ((android.view.ViewGroup) field).getChildAt(1);
+        d.setOnShowListener(x -> edit.postDelayed(() -> {
+            edit.requestFocus();
+            ((android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(edit, 0);
+        }, 200));
+        d.show();
     }
 
     private String relayHint() {

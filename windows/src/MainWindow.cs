@@ -31,6 +31,7 @@ namespace Broadsheet
         const int FETCH_WAIT = 14;
         const int REFRESH_PAGES = 4;
         static readonly int[] AUTO_REFRESH_MIN = { 25, 60, 0 };
+        static readonly string[] REFRESH_NAMES = { "25 min", "Hourly", "Off" };
         static readonly string[] AUTO_REFRESH_NAMES = { "every 25 minutes", "every hour", "off" };
         static readonly string[] THEMES = { "auto", "dark", "light" };
         static readonly string[] THEME_NAMES = { "Automatic", "Dark", "Light" };
@@ -1117,6 +1118,7 @@ namespace Broadsheet
             refreshTile = new Options.Tile("↻", "Refresh now")  // feature: opt.refresh
             {
                 Stepper = true,
+                StepValues = REFRESH_NAMES,
                 OnOk = () => { RefreshNow(); Load(); },
                 OnStep = d =>
                 {
@@ -1246,7 +1248,7 @@ namespace Broadsheet
             }
 
             // ‹ how often › beside the label, like the phone; a click elsewhere refreshes now.
-            refreshTile.Value = new[] { "25 min", "Hourly", "Off" }[AutoRefreshStep];
+            refreshTile.Value = REFRESH_NAMES[AutoRefreshStep];
             refreshTile.Hint = refreshing ? "Refreshing Apple News on the Mac…" : loadedAt > 0 ? "Updated " + Dates.Time(loadedAt) : null;
         }
 

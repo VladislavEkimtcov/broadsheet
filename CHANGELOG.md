@@ -7,6 +7,9 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Windows: Refresh now's ‹ › stay put as the value changes. They were placed around the value
+  itself, so going from "25 min" to "Off" moved them out from under the mouse; they now sit
+  around the widest value, with the value centred between them.
 - More on …, all ports: Apple News's own bookkeeping tags no longer show up as topics ("More on
   Internal: Spinach", "More on Qualitative: Business, short shelf life", "LLM Politics", "NewsS",
   "… EdOps"). In 54 stories on the relay, "Internal: Spinach" was on 35 of them.

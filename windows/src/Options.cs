@@ -157,6 +157,9 @@ namespace Broadsheet
             public bool Opens;
             /// <summary>‹ value › buttons on the right: a click on them steps, anywhere else is OK.</summary>
             public bool Stepper;
+            /// <summary>Every value a Stepper tile can show: the buttons are placed for the widest, so
+            /// they stay put under the mouse as the value changes.</summary>
+            public string[] StepValues;
 
             public Tile(string icon, string label)
             {
@@ -647,9 +650,13 @@ namespace Broadsheet
                     Brush btn = Ui.Brush(Ui.Alpha(Ui.INK, tile.Enabled ? 0.08 : 0.04));
                     dc.DrawRectangle(btn, null, new Rect(StepRight, StepTop, STEP, STEP));
                     Icons.Draw(dc, Icons.RIGHT, StepRight + 4, StepTop + 4, 20, fg);
-                    double vx = StepRight - 10 - val.Width;
-                    dc.DrawText(val, new Point(vx, top));
-                    StepLeft = vx - 10 - STEP;
+                    double slot = val.Width;
+                    if (tile.StepValues != null)
+                        foreach (string sv in tile.StepValues)
+                            slot = Math.Max(slot, Ui.Format(sv, Ui.SansMedium, 16, Colors.Black).Width);
+                    double sx = StepRight - 10 - slot;
+                    dc.DrawText(val, new Point(sx + (slot - val.Width) / 2, top));
+                    StepLeft = sx - 10 - STEP;
                     dc.DrawRectangle(btn, null, new Rect(StepLeft, StepTop, STEP, STEP));
                     Icons.Draw(dc, Icons.LEFT, StepLeft + 4, StepTop + 4, 20, fg);
                     taken = right - StepLeft;

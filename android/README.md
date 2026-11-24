@@ -92,7 +92,9 @@ your network by itself.
 - **Private:** what you read, how far, and your likes stay on the TV (`library.json` in the app's
   files). The Mac only learns what the TV asks of it.
 
-![The options panel over the front page: Like or dislike with thumb icons, Mark as unread, More from NBC News, and the text size slider at 18.5 pt](../docs/tv/options.jpg)
+![The options panel over the front page, light by day: Save story on Mac, Like or dislike with thumb icons, Mark as read, More stories like this with a chevron, the text size slider at 21 pt and Dark mode](../docs/tv/options.jpg)
+
+![More stories like this: a pop-up in the middle of the screen with More from NBC News (45 stories) and Related stories (6 stories), already fetched](../docs/tv/more-like-this.jpg)
 
 ![The same front page after sunset, in the dark theme](../docs/tv/front-page-dark.jpg)
 

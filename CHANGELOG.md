@@ -12,6 +12,8 @@ their own numbers; they're noted where they shipped.
   Mark as read and Open in the browser are gone (errors still show there). More from says "OK
   to show" (TV), "Tap to show" (phone), "Enter to show" (Windows). Stories you've read shows its
   setting underneath (Do nothing, Dim after reading, Hide after reading) instead of a count.
+- Windows: the exe carries the red "B" icon, so the Start menu shortcut, the taskbar pin and
+  Explorer show it (they showed the generic program icon; only the window had it).
 - Windows: the mouse wheel always scrolls the Options panel; it no longer changes the text size,
   Dark mode, Stories you've read or the Like / Dislike choice on the way past. ◀ ▶ still change
   them, and a click on Dark mode or Stories you've read steps to the next value, round to the

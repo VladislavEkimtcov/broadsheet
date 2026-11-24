@@ -16,6 +16,9 @@
     <Prefer32Bit>false</Prefer32Bit>
     <WarningLevel>4</WarningLevel>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- The window's icon (MainWindow.MakeIcon), drawn by tools/windows-icon.py, so the exe, the
+         Start menu shortcut and Explorer show it too. -->
+    <ApplicationIcon>Broadsheet.ico</ApplicationIcon>
     <GenerateManifests>false</GenerateManifests>
     <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
   </PropertyGroup>

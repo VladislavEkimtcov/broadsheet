@@ -30,6 +30,7 @@ Unblock-File $exe -ErrorAction SilentlyContinue
 $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
 $s.TargetPath = $exe
 $s.WorkingDirectory = $dir
+$s.IconLocation = "$exe,0"
 $s.Description = 'Apple News, by way of Apple News Relay on a Mac'
 $s.Save()
 if ($Autostart) { Set-ItemProperty -Path $run -Name Broadsheet -Value "`"$exe`"" }

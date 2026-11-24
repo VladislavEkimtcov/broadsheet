@@ -12,8 +12,10 @@ their own numbers; they're noted where they shipped.
   Mark as read and Open in the browser are gone (errors still show there). More from says "OK
   to show" (TV), "Tap to show" (phone), "Enter to show" (Windows). Stories you've read shows its
   setting underneath (Do nothing, Dim after reading, Hide after reading) instead of a count.
-- Windows: the mouse wheel over the text size slider scrolls the Options panel instead of
-  changing the size.
+- Windows: the mouse wheel always scrolls the Options panel; it no longer changes the text size,
+  Dark mode, Stories you've read or the Like / Dislike choice on the way past. ◀ ▶ still change
+  them, and a click on Dark mode or Stories you've read steps to the next value, round to the
+  first.
 - TV: Back on the front page no longer closes Broadsheet straight away. From a story it goes
   to the section on the rail, then to the rail's top entry; only Back there leaves the app.
 - Windows: Backspace, Esc and the mouse's back button do the same on the front page (story,

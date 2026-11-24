@@ -43,7 +43,9 @@ release zip) or from `bin\`.
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
   zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". The wheel
-  over the text size slider scrolls the panel; ◀ ▶ or a click on the track changes the size.
+  always scrolls the panel and never changes a setting: ◀ ▶ do that, a click on the text size
+  track moves the knob there, and a click on Dark mode or Stories you've read goes to the next
+  value (round to the first after the last).
 - **Video:** plays inside the app, full window, with Windows' own player (the one behind the
   Films & TV app, in the box since Windows 10 1809): HLS streams, which most publishers send, and
   MP4. Space pauses, Left/Right skip 10 s, Page Up/Down 30 s, clicking the line seeks, Esc goes

@@ -117,6 +117,6 @@ renumbered when the ports started sharing one version).
 | ID | Feature | TV | Phone | Windows | Notes |
 |---|---|---|---|---|---|
 | `win.mouse` | Hover focuses a card, click opens it; mouse back button | — | — | ✅ | D-pad only on the TV. Phone: touch |
-| `win.wheel` | Browser-like wheel; precision touchpads track 1:1 | — | — | ✅ | D-pad only on the TV. Phone: touch |
+| `win.wheel` | Browser-like wheel; precision touchpads track 1:1; in Options it only scrolls (click cycles a setting) | — | — | ✅ | D-pad only on the TV. Phone: touch |
 | `win.icon_buttons` | ← back in the reader, ☰ for Options | — | ✅ 0.4.0 | ✅ | The remote has Back and Menu keys. Phone: ← and ☰ in the reader's top bar, ☰ by the masthead |
 | `win.keys` | F5 refresh, F11 / Alt+Enter full screen | — | — | ✅ | No such keys on the remote. Phone: no such keys |

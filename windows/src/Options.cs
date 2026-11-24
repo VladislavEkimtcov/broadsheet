@@ -136,6 +136,8 @@ namespace Broadsheet
             public int Segment;
             public Action<int> OnStep;
             public Action OnOk;
+            /// <summary>What a click does on a tile of settings: the next value, round to the first after the last.</summary>
+            public Action OnCycle;
 
             public Tile(string icon, string label)
             {
@@ -361,18 +363,14 @@ namespace Broadsheet
         }
 
         /// <summary>A click on a tile: selects it, then does what its spot means (a pill, a slider step, a side, or OK).</summary>
-        void Clicked(TileView v, Point p, bool wheel, int wheelDir)
+        void Clicked(TileView v, Point p)
         {
             touched = true;
             int i = views.IndexOf(v);
             if (i < 0) return;
             selected = i;
             Tile t = tiles[i];
-            if (wheel)
-            {
-                if (t.OnStep != null || t.Segments != null) Step(t, wheelDir);
-            }
-            else if (t.Segments != null && p.Y > 16 + 17 * 0.8 + 14)
+            if (t.Segments != null && p.Y > 16 + 17 * 0.8 + 14)
             {
                 int seg = Math.Max(0, Math.Min(t.Segments.Length - 1, (int)(p.X / (v.ActualWidth / t.Segments.Length))));
                 t.Segment = seg;
@@ -396,6 +394,10 @@ namespace Broadsheet
             else if (t.OnOk != null)
             {
                 Ok(t);
+            }
+            else if (t.OnCycle != null)
+            {
+                if (t.Enabled) t.OnCycle();
             }
             else if (t.OnStep != null)
             {
@@ -431,18 +433,8 @@ namespace Broadsheet
 
             protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
             {
-                owner.Clicked(this, e.GetPosition(this), false, 0);
+                owner.Clicked(this, e.GetPosition(this));
                 e.Handled = true;
-            }
-
-            protected override void OnMouseWheel(MouseWheelEventArgs e)
-            {
-                // Not the text size slider: the wheel over it scrolls the pane, like anywhere else.
-                if (tile.Slider == 0 && (tile.Segments != null || (tile.OnStep != null && tile.OnOk == null)))
-                {
-                    owner.Clicked(this, e.GetPosition(this), true, e.Delta > 0 ? 1 : -1);
-                    e.Handled = true;
-                }
             }
 
             protected override Size MeasureOverride(Size available)

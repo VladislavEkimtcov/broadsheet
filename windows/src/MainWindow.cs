@@ -1077,23 +1077,18 @@ namespace Broadsheet
                 OnStep = d =>
                 {
                     int i = Math.Max(0, Math.Min(THEMES.Length - 1, IndexOf(THEMES, ThemeMode) + d));
-                    prefs.Set("theme", THEMES[i]);
-                    FillOptions();
-                    ApplyTheme();
-                }
+                    SetTheme(THEMES[i]);
+                },
+                OnCycle = () => SetTheme(THEMES[(IndexOf(THEMES, ThemeMode) + 1) % THEMES.Length])
             };
             readTile = new Options.Tile("◉", "Stories you've read")  // feature: opt.read_mode
             {
                 OnStep = d =>
                 {
                     int i = Math.Max(0, Math.Min(READ_MODES.Length - 1, IndexOf(READ_MODES, ReadMode) + d));
-                    if (READ_MODES[i] == ReadMode) return;
-                    prefs.Set("read", READ_MODES[i]);
-                    shown = Arrange();
-                    if (shown.Count > 0) front.SetSections(shown, true);
-                    front.RefreshDim();
-                    FillOptions();
-                }
+                    SetReadMode(READ_MODES[i]);
+                },
+                OnCycle = () => SetReadMode(READ_MODES[(IndexOf(READ_MODES, ReadMode) + 1) % READ_MODES.Length])
             };
             Story unfinished = ReaderShown ? null : library.Unfinished();
             continueTile = null;
@@ -1175,6 +1170,23 @@ namespace Broadsheet
                     + "  ·  " + (waiting == 0 ? "nothing waiting" : waiting + " waiting")
                     + (acct != null && acct.Bool("news_plus") ? "  ·  Apple News+" : ""));
             });
+        }
+
+        void SetTheme(string mode)
+        {
+            prefs.Set("theme", mode);
+            FillOptions();
+            ApplyTheme();
+        }
+
+        void SetReadMode(string mode)
+        {
+            if (mode == ReadMode) return;
+            prefs.Set("read", mode);
+            shown = Arrange();
+            if (shown.Count > 0) front.SetSections(shown, true);
+            front.RefreshDim();
+            FillOptions();
         }
 
         void FillOptions()

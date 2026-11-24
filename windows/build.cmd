@@ -12,5 +12,5 @@ if not exist "%FW%\MSBuild.exe" set FW=%WINDIR%\Microsoft.NET\Framework\v4.0.303
 if /i not "%1"=="test" exit /b 0
 set WPF=%FW%\WPF
 "%FW%\csc.exe" /nologo /out:bin\Tests.exe /target:exe /r:"%WPF%\WindowsBase.dll" /r:"%WPF%\PresentationCore.dll" /r:"%FW%\System.Xaml.dll" ^
-  tests\Tests.cs src\Json.cs src\Dates.cs src\Sun.cs src\Model.cs src\Ui.cs || exit /b 1
+  tests\Tests.cs src\Json.cs src\Dates.cs src\Sun.cs src\Model.cs src\Ui.cs src\Ladder.cs src\Sse.cs || exit /b 1
 bin\Tests.exe

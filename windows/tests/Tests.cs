@@ -105,6 +105,47 @@ namespace Broadsheet
                 }
         }
 
+        static int N(JObj c, string key) { return (int)c.Num(key, 0); }
+
+        static bool Same(int[] got, JObj c)
+        {
+            List<object> want = c.Arr("expect");
+            if (got.Length != want.Count) return false;
+            for (int i = 0; i < got.Length; i++) if (got[i] != (int)Convert.ToDouble(want[i])) return false;
+            return true;
+        }
+
+        static void LadderCases(JObj l)
+        {
+            foreach (JObj c in Each(l, "around"))
+                Check(Same(Ladder.Around(N(c, "index"), N(c, "count")), c), "ladder: around, " + c.Str("name"));
+            foreach (JObj c in Each(l, "want_more"))
+                Check(Ladder.WantMore(N(c, "index"), N(c, "loaded")) == c.Bool("expect"), "ladder: want more, " + c.Str("name"));
+            foreach (JObj c in Each(l, "rail_neighbours"))
+                Check(Same(Ladder.RailNeighbours(N(c, "index"), N(c, "count"), N(c, "direction")), c), "ladder: rail, " + c.Str("name"));
+            foreach (JObj c in Each(l, "reading"))
+                Check(Same(Ladder.Reading(N(c, "index"), N(c, "count")), c), "ladder: reading, " + c.Str("name"));
+            foreach (JObj c in Each(l, "near"))
+                Check(Ladder.Near(N(c, "scroll"), N(c, "viewport"), N(c, "content"), N(c, "screens")) == c.Bool("expect"), "ladder: near, " + c.Str("name"));
+        }
+
+        static void SseCases(JObj s)
+        {
+            foreach (JObj c in Each(s, "streams"))
+            {
+                List<Sse.Event> got = Sse.Parse(c.Opt("stream"));
+                List<object> want = c.Arr("events");
+                bool ok = got.Count == want.Count;
+                for (int i = 0; ok && i < got.Count; i++)
+                {
+                    JObj w = (JObj)want[i];
+                    ok = got[i].Type == w.Opt("type") && got[i].Data == w.Opt("data")
+                        && (got[i].Id == null ? w.IsNull("id") : got[i].Id == w.Opt("id"));
+                }
+                Check(ok, "sse: " + c.Str("name"));
+            }
+        }
+
         static int Main()
         {
             // JSON
@@ -127,6 +168,8 @@ namespace Broadsheet
             {
                 DateCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "dates.json"))));
                 SunCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sun.json"))));
+                LadderCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "ladder.json"))));
+                SseCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sse.json"))));
             }
 
             // Stories as the relay sends them
@@ -148,6 +191,13 @@ namespace Broadsheet
             Check(art.Blocks.Count == 3 && art.Blocks[2].Type == "video" && art.Blocks[2].Height == 500, "article blocks");
             Check(art.PendingJob == "j" && art.JobState == "running" && art.Saved && art.Topics.Count == 1, "article state");
             Check(art.Words() == 3 && art.Byline == "By A", "article words and byline");
+            Story thumbs = Story.From(Json.ParseObject("{\"id\":\"A2\",\"title\":\"T\",\"thumbnails\":[{\"url\":\"s\",\"width\":300},"
+                + "{\"url\":\"m\",\"width\":750},{\"url\":\"l\",\"width\":1600}]}"));
+            Check(thumbs.ImageFor(600) == "m" && thumbs.ImageFor(2000) == "l" && thumbs.Image == "l", "story picks the picture size it needs");
+            Article head = new Article(Json.ParseObject("{\"id\":\"A3\",\"title\":\"H\",\"completeness\":\"full\","
+                + "\"body\":{\"word_count\":900,\"next_block\":6,\"blocks\":[{\"type\":\"paragraph\",\"text\":\"one two\"}]}}"));
+            Check(head.NextBlock == 6 && head.Words() == 900, "an opening knows where the rest starts and the whole story's length");
+            Check(art.NextBlock == -1, "a whole story has no rest");
 
             // Accents stay readable on both pages
             Ui.SetLight(false);

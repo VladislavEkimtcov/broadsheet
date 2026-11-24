@@ -85,7 +85,8 @@ namespace Broadsheet
             if (!near || Story.Image == null || Kind == BRIEF || ActualWidth <= 0) return;
             double px = Ui.Scale * Ui.PixelsPerDip;
             double h = Kind == HERO ? ActualHeight : ActualWidth * 9 / 16;
-            images.Load(this, Story.Image, (int)Math.Ceiling(ActualWidth * px), (int)Math.Ceiling(h * px));
+            int w = (int)Math.Ceiling(ActualWidth * px);
+            images.Load(this, Story.ImageFor(w), w, (int)Math.Ceiling(h * px));
         }
 
         public void OnImage(BitmapSource b, bool fresh)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -12,6 +13,62 @@ namespace Broadsheet
     /// <summary>Main thread. <paramref name="error"/> is a short sentence for the screen, or null.</summary>
     delegate void Done<T>(T value, string error);
 
+    /// <summary>A front page from Relay.Front: Unchanged when the relay said 304.</summary>
+    sealed class FrontPage
+    {
+        public readonly List<Section> Sections;
+        public readonly bool Unchanged;
+        public readonly long Version;
+
+        public FrontPage(List<Section> sections, bool unchanged, long version)
+        {
+            Sections = sections;
+            Unchanged = unchanged;
+            Version = version;
+        }
+    }
+
+    /// <summary>A page of stories and the link to the next one (null at the end).</summary>
+    sealed class StoryPage
+    {
+        public readonly List<Story> Stories;
+        public readonly string Next;
+
+        public StoryPage(List<Story> stories, string next)
+        {
+            Stories = stories;
+            Next = next;
+        }
+    }
+
+    /// <summary>Threads that take work in order: a few for quick calls, others for anything that
+    /// waits on the Mac, one for fetching ahead.</summary>
+    sealed class Lane
+    {
+        readonly BlockingCollection<Action> work = new BlockingCollection<Action>();
+
+        public Lane(string name, int threads, ThreadPriority priority)
+        {
+            for (int i = 0; i < threads; i++)
+            {
+                Thread t = new Thread(() =>
+                {
+                    foreach (Action a in work.GetConsumingEnumerable())
+                    {
+                        try { a(); }
+                        catch (Exception) { }
+                    }
+                });
+                t.IsBackground = true;
+                t.Priority = priority;
+                t.Name = name + i;
+                t.Start();
+            }
+        }
+
+        public void Run(Action a) { work.Add(a); }
+    }
+
     /// <summary>
     /// Talks to Apple News Relay (github.com/VladislavEkimtcov/apple-news-relay), the Mac-side server
     /// that turns the Apple News app into a JSON API. Everything the app shows comes from it.
@@ -24,11 +81,28 @@ namespace Broadsheet
     {
         public const int PORT = 8787;
         const int MAX_JSON = 8 * 1024 * 1024;
+        /// <summary>Stories per section on the front page: the hero, two briefs and three rows of three.</summary>
+        public const int PER_SECTION = 12;
+        /// <summary>Stories per further page of a section: five rows.</summary>
+        public const int PAGE = 15;
+        /// <summary>Text in a story's first part: about two screens (the rest follows as it's read).</summary>
+        public const int HEAD_CHARS = 2400;
+        /// <summary>What a card needs of a story, so the front page stays small.</summary>
+        const string CARD_FIELDS = "title,excerpt,byline,channel,thumbnails,published_at,access,completeness,reading_minutes,colors,url,apple_news_url";
 
         readonly Dispatcher ui;
         readonly Prefs prefs;
         volatile string baseUrl, token;
         volatile string origin = "";
+        volatile string frontEtag;
+        /// <summary>The relay predates 0.3 (no /v1/front, no interest lists): the 0.2 calls are used.</summary>
+        volatile bool legacy, noInterest;
+        /// <summary>Quick calls; anything that waits on the Mac goes to slow, so it can't hold these up.</summary>
+        static readonly Lane quick = new Lane("relay", 3, ThreadPriority.Normal);
+        static readonly Lane slow = new Lane("relay-wait", 4, ThreadPriority.Normal);
+        static readonly Lane warm = new Lane("ahead", 1, ThreadPriority.Lowest);
+        /// <summary>The stories kept on this computer: one thing at a time, in order.</summary>
+        static readonly Lane disk = new Lane("disk", 1, ThreadPriority.BelowNormal);
 
         public Relay(Dispatcher ui, Prefs prefs)
         {
@@ -56,6 +130,14 @@ namespace Broadsheet
         public string Origin { get { return origin; } }
 
         public bool Known { get { return baseUrl != null; } }
+
+        /// <summary>"http://10.0.0.4:8787", or null: for the event stream.</summary>
+        public string Base { get { return baseUrl; } }
+
+        public string Token { get { return token; } }
+
+        /// <summary>The relay has 0.3's calls (front page in one, interest lists, story parts).</summary>
+        public bool Modern { get { return !legacy; } }
 
         public static string ConfigPath { get { return Path.Combine(Paths.Roaming, "relay.conf"); } }  // feature: relay.conf
 
@@ -89,7 +171,7 @@ namespace Broadsheet
 
         static void Run(Action a)
         {
-            ThreadPool.QueueUserWorkItem(_ => a());
+            quick.Run(a);
         }
 
         // ------------------------------------------------------------------ finding it
@@ -230,20 +312,31 @@ namespace Broadsheet
 
         // ------------------------------------------------------------------ calls
 
-        JObj Call(string method, string path, int timeoutMs)
+        /// <summary>A request whose status the caller looks at (304, 404); network trouble and a refusal throw.</summary>
+        Net.Response Send(string method, string path, string etag, int timeoutMs, string body)
         {
             string b = baseUrl;
             if (b == null) throw new IOException("Apple News Relay hasn't been found yet.");
             Net.Response r;
             try
             {
-                r = Net.Request(method, b + path, token, timeoutMs, MAX_JSON);
+                r = Net.Request(method, b + path, token, timeoutMs, MAX_JSON, etag, body);
             }
             catch (Exception e)
             {
                 throw new IOException("Can't reach Apple News Relay at " + Where + ". Is the Mac awake?", e);
             }
             if (r.Code == 401 || r.Code == 403) throw new IOException("The relay at " + Where + " turned this computer away (HTTP " + r.Code + ").");
+            return r;
+        }
+
+        JObj Call(string method, string path, int timeoutMs)
+        {
+            return Parse(Send(method, path, null, timeoutMs, null));
+        }
+
+        static JObj Parse(Net.Response r)
+        {
             if (r.Code >= 400)
             {
                 string detail = null;
@@ -266,39 +359,132 @@ namespace Broadsheet
             return e is IOException || e is FormatException ? e.Message : "Something went wrong: " + e.Message;
         }
 
-        /// <summary>The front page: Today's sections from Apple News, plus Latest and Saved from the archive.</summary>
-        public void Front(Done<List<Section>> done)
+        /// <summary>
+        /// The front page: Today's sections from Apple News (each deep, its first page), Latest and Saved,
+        /// in one call. Conditional on the last one: Unchanged when nothing on it changed. A relay older
+        /// than 0.3 gets the three calls of 0.2.
+        /// </summary>
+        public void Front(Done<FrontPage> done)
         {
             Run(() =>
             {
                 try
                 {
+                    if (!legacy)
+                    {
+                        Net.Response r = Send("GET", "/v1/front?per_section=" + PER_SECTION + "&fields=" + CARD_FIELDS
+                            + "&fetch_missing=true", frontEtag, 20000, null);
+                        if (r.Code == 304)
+                        {
+                            Post(done, new FrontPage(null, true, 0), null);
+                            return;
+                        }
+                        if (r.Code != 404)
+                        {
+                            JObj data = Parse(r).Obj("data") ?? new JObj();
+                            frontEtag = r.ETag;
+                            Save("front.json", new JObj().Put("front", data).Put("etag", r.ETag ?? ""));
+                            Post(done, new FrontPage(Assemble(data), false, (long)data.Num("version", 0)), null);
+                            return;
+                        }
+                        legacy = true;
+                    }
                     JObj sections = Call("GET", "/v1/sections?per_section=30", 20000);
                     JObj latest = Call("GET", "/v1/articles?limit=45", 20000);
                     JObj saved = Call("GET", "/v1/saved?limit=45&fetch_missing=true", 20000);
                     Save("front.json", new JObj().Put("sections", sections).Put("latest", latest).Put("saved", saved));
-                    Post(done, Assemble(sections, latest, saved), null);
+                    Post(done, new FrontPage(Assemble(sections, latest, saved), false, 0), null);
                 }
                 catch (Exception e)
                 {
-                    Post(done, null, Message(e));
+                    Post<FrontPage>(done, null, Message(e));
                 }
             });
         }
 
-        /// <summary>The last front page that loaded, for an instant start; null if none.</summary>
-        public List<Section> CachedFront()
+        /// <summary>The last front page that loaded, for an instant start (read off the UI thread); null if none.</summary>
+        public void CachedFront(Done<FrontPage> done)  // feature: front.cache
         {
-            try
+            Run(() =>
             {
-                JObj o = Load("front.json");
-                if (o == null) return null;
-                return Assemble(o.Obj("sections"), o.Obj("latest"), o.Obj("saved"));
-            }
-            catch (Exception)
+                FrontPage page = null;
+                try
+                {
+                    JObj o = Load("front.json");
+                    if (o != null && o.Obj("front") != null)
+                    {
+                        JObj data = o.Obj("front");
+                        page = new FrontPage(Assemble(data), false, (long)data.Num("version", 0));
+                        string etag = o.Str("etag");
+                        if (etag != null && frontEtag == null) frontEtag = etag;
+                    }
+                    else if (o != null)
+                    {
+                        page = new FrontPage(Assemble(o.Obj("sections"), o.Obj("latest"), o.Obj("saved")), false, 0);
+                    }
+                }
+                catch (Exception)
+                {
+                    page = null;
+                }
+                Post(done, page, null);
+            });
+        }
+
+        /// <summary>/v1/front's data: sections with a link to their next page, Latest second, Saved last.</summary>
+        static List<Section> Assemble(JObj data)
+        {
+            List<Section> out_ = new List<Section>();
+            List<object> sections = data.Arr("sections");
+            if (sections != null)
             {
-                return null;
+                foreach (object x in sections)
+                {
+                    JObj s = x as JObj;
+                    if (s == null) continue;
+                    List<Story> stories = Story.List(s.Arr("articles"));
+                    if (stories.Count < 2) continue; // puzzles, empty slots
+                    Section sec = new Section(s.Opt("id"), s.Opt("title"), stories);
+                    JObj links = s.Obj("links");
+                    sec.Next = links == null ? null : links.Str("next");
+                    sec.Total = Math.Max(stories.Count, s.Int("article_count", stories.Count));
+                    sec.Today = s.Int("today_count", stories.Count);
+                    out_.Add(sec);
+                }
             }
+            JObj latest = data.Obj("latest");
+            List<Story> newest = Story.List(latest == null ? null : latest.Arr("articles"));
+            if (newest.Count > 0)
+            {
+                Section sec = new Section("latest", "Latest", newest);
+                JObj links = latest.Obj("links");
+                sec.Next = links == null ? null : links.Str("next");
+                out_.Insert(Math.Min(2, out_.Count), sec);
+            }
+            JObj saved = data.Obj("saved");
+            List<Story> kept = Story.List(saved == null ? null : saved.Arr("articles"));
+            if (kept.Count > 0) out_.Add(new Section("saved", "Saved Stories", kept));
+            return out_;
+        }
+
+        /// <summary>The next page of a section (Section.Next): its stories and the link after it.</summary>
+        public void Page(string next, Done<StoryPage> done)  // feature: front.deep
+        {
+            Run(() =>
+            {
+                try
+                {
+                    string path = next.Contains("fields=") ? next : next + (next.Contains("?") ? "&" : "?") + "fields=" + CARD_FIELDS;
+                    if (path.StartsWith("/v1/sections/")) path = System.Text.RegularExpressions.Regex.Replace(path, "limit=\\d+", "limit=" + PAGE);
+                    JObj o = Call("GET", path, 20000);
+                    JObj links = o.Obj("links");
+                    Post(done, new StoryPage(Story.List(o.Arr("data")), links == null ? null : links.Str("next")), null);
+                }
+                catch (Exception e)
+                {
+                    Post<StoryPage>(done, null, Message(e));
+                }
+            });
         }
 
         public long CachedFrontTime()
@@ -330,14 +516,16 @@ namespace Broadsheet
             return out_;
         }
 
-        /// <summary>One story with its body. wait: seconds the relay may spend getting it from Apple News.</summary>
-        public void Article(string id, int wait, Done<Article> done)
+        /// <summary>One story with its body. wait: seconds the relay may spend getting it from Apple News;
+        /// maxChars: only the opening, about that much text (0: all of it).</summary>
+        public void Article(string id, int wait, int maxChars, Done<Article> done)
         {
-            Run(() =>
+            (wait > 0 ? slow : quick).Run(() =>
             {
                 try
                 {
-                    JObj o = Call("GET", "/v1/articles/" + Uri.EscapeDataString(id) + "?wait=" + wait, (wait + 15) * 1000);
+                    JObj o = Call("GET", "/v1/articles/" + Uri.EscapeDataString(id) + "?wait=" + wait
+                        + (maxChars > 0 ? "&max_chars=" + maxChars : ""), (wait + 15) * 1000);
                     Post(done, new Article(o.Obj("data") ?? new JObj()), null);
                 }
                 catch (Exception e)
@@ -347,10 +535,125 @@ namespace Broadsheet
             });
         }
 
+        public void Article(string id, int wait, Done<Article> done)
+        {
+            Article(id, wait, 0, done);
+        }
+
+        /// <summary>The rest of a story whose opening is on screen, from block 'from' on.</summary>
+        public void ArticleRest(string id, int from, Done<Article> done)  // feature: reader.progressive
+        {
+            Run(() =>
+            {
+                try
+                {
+                    JObj o = Call("GET", "/v1/articles/" + Uri.EscapeDataString(id) + "?fetch=never&from_block=" + from, 15000);
+                    Post(done, new Article(o.Obj("data") ?? new JObj()), null);
+                }
+                catch (Exception e)
+                {
+                    Post<Article>(done, null, Message(e));
+                }
+            });
+        }
+
+        /// <summary>A story's opening, ahead of time, if the relay has its body (never asks the Mac); on
+        /// the fetching-ahead thread. done gets the relay's JSON on that thread, or null.</summary>
+        public void Head(string id, Action<JObj> done)
+        {
+            warm.Run(() =>
+            {
+                JObj data = null;
+                try
+                {
+                    data = Call("GET", "/v1/articles/" + Uri.EscapeDataString(id) + "?fetch=never&max_chars=" + HEAD_CHARS, 15000).Obj("data");
+                    if (data != null && data.Opt("completeness") == "summary") data = null;
+                }
+                catch (Exception) { data = null; }
+                done(data);
+            });
+        }
+
+        /// <summary>What may have changed about a story kept here: saved, liked, its topics.</summary>
+        public void ArticleState(string id, Done<JObj> done)
+        {
+            Run(() =>
+            {
+                try
+                {
+                    Post(done, Call("GET", "/v1/articles/" + Uri.EscapeDataString(id) + "?fetch=never&fields=saved,reaction,topics,completeness", 10000).Obj("data"), null);
+                }
+                catch (Exception e) { Post<JObj>(done, null, Message(e)); }
+            });
+        }
+
+        /// <summary>
+        /// The stories this computer may open next, most likely first: the relay has Apple News fetch the
+        /// ones it lacks, in that order, and forgets this computer's previous list. done gets the ids the
+        /// relay already has a body for. A relay older than 0.3 gets a background fetch for the first.
+        /// </summary>
+        public void Interest(string client, List<string> ids, Done<List<string>> done)  // feature: front.warm
+        {
+            Run(() =>
+            {
+                if (noInterest)
+                {
+                    if (ids.Count > 0) PrefetchNow(ids[0]);
+                    return;
+                }
+                try
+                {
+                    List<object> a = new List<object>();
+                    foreach (string id in ids) a.Add(id);
+                    Net.Response r = Send("PUT", "/v1/interest/" + client, null, 8000, new JObj().Put("articles", a).ToString());
+                    if (r.Code == 404)
+                    {
+                        noInterest = true;
+                        if (ids.Count > 0) PrefetchNow(ids[0]);
+                        return;
+                    }
+                    JObj data = Parse(r).Obj("data");
+                    List<object> states = data == null ? null : data.Arr("articles");
+                    List<string> cached = new List<string>();
+                    if (states != null)
+                        foreach (object x in states)
+                        {
+                            JObj st = x as JObj;
+                            if (st != null && st.Opt("state") == "cached") cached.Add(st.Opt("id"));
+                        }
+                    Post(done, cached, null);
+                }
+                catch (Exception) { /* only a guess; never mind */ }
+            });
+        }
+
+        /// <summary>This computer stops looking ahead (the window was minimised).</summary>
+        public void ClearInterest(string client)
+        {
+            if (noInterest) return;
+            Run(() =>
+            {
+                try { Send("DELETE", "/v1/interest/" + client, null, 5000, null); }
+                catch (Exception) { }
+            });
+        }
+
+        /// <summary>Work on this computer's own files (Bodies) off the UI thread, in order; done on the UI thread.</summary>
+        public void Background<T>(Func<T> work, Action<T> done)
+        {
+            disk.Run(() =>
+            {
+                T value = default(T);
+                try { value = work(); }
+                catch (Exception) { }
+                ui.BeginInvoke(new Action(() => done(value)));
+            });
+        }
+
         /// <summary>Waits for a relay job; reports its final state ("succeeded", "failed", or still "running").</summary>
         public void Job(string id, int wait, Done<string> done)
         {
-            Run(() =>
+            slow.Run(() =>
             {
                 try
                 {
@@ -379,7 +682,7 @@ namespace Broadsheet
 
         void JobCall(string method, string path, Done<string> done)
         {
-            Run(() =>
+            slow.Run(() =>
             {
                 try
                 {
@@ -396,11 +699,13 @@ namespace Broadsheet
         /// <summary>Asks the Mac to get a story's body ahead of time, behind anything someone is waiting on.</summary>
         public void Prefetch(string id)
         {
-            Run(() =>
-            {
-                try { Call("POST", "/v1/articles/" + Uri.EscapeDataString(id) + "/fetch?priority=background", 8000); }
-                catch (Exception) { /* only a guess; never mind */ }
-            });
+            Run(() => PrefetchNow(id));
+        }
+
+        void PrefetchNow(string id)
+        {
+            try { Call("POST", "/v1/articles/" + Uri.EscapeDataString(id) + "/fetch?priority=background", 8000); }
+            catch (Exception) { /* only a guess; never mind */ }
         }
 
         /// <summary>A list of stories: a channel's or topic's, or the ones related to a story.</summary>
@@ -428,7 +733,7 @@ namespace Broadsheet
 
         void StoryAction(string method, string path, Done<JObj> done)
         {
-            Run(() =>
+            slow.Run(() =>
             {
                 try
                 {

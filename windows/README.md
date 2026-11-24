@@ -44,10 +44,17 @@ needs `..\assets\fonts`, and the tests read `..\spec\cases`, so copy this folder
 | `%APPDATA%\Broadsheet\settings.conf` | settings (key=value) |
 | `%APPDATA%\Broadsheet\library.json` | what you've read and how far, likes; stays on this machine |
 | `%APPDATA%\Broadsheet\relay.conf` | optional: `url=http://<mac>:8787` and `token=...` |
-| `%LOCALAPPDATA%\Broadsheet\` | the last front page, pictures (pruned to 150 MB), `broadsheet.log` |
+| `%LOCALAPPDATA%\Broadsheet\` | the last front page, pictures (`img`, 150 MB, least used out first), `broadsheet.log` (startup timings, `front 304`, `open … ms kept here`) |
+| `%LOCALAPPDATA%\Broadsheet\bodies` | stories opened or headed for (8 MB, 400 stories, two weeks), so they open at once, even while the Mac sleeps |
 
 It finds the relay by asking port 8787 on its own subnets (Windows has no Bonjour built in),
-then remembers the address.
+then remembers the address. With relay 0.3 it talks to it the way the TV app does (see the TV
+README's "How it talks to the relay"): the front page in one call with `If-None-Match`, the
+relay's event stream for changes (shown once keys, wheel and clicks have been still for 8 s),
+deep sections a page at a time, stories in one trip with the rest as you read, and an interest
+list of the stories you're heading for (the card in focus or under the pointer and its
+neighbours, a section's first three when you rest on it or hover it on the rail). Minimised, it
+stops the stream and drops its list.
 
 ## Code
 

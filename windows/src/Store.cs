@@ -17,6 +17,8 @@ namespace Broadsheet
         public static readonly string Local = Dir(Environment.SpecialFolder.LocalApplicationData);
         public static readonly string Cache = Sub(Local, "cache");
         public static readonly string Images = Sub(Local, "img");
+        /// <summary>Stories kept on this computer (Bodies).</summary>
+        public static readonly string Bodies = Sub(Local, "bodies");
 
         static string Dir(Environment.SpecialFolder f)
         {

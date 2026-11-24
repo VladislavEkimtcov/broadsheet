@@ -25,8 +25,17 @@ namespace Broadsheet
             /// <summary>Shown faded: read here, with "Stories you've read" set to dim.</summary>
             bool IsDimmed(string storyId);
             /// <summary>A card got focus (to fetch its story ahead if it stays there).</summary>
-            void OnFocusStory(Story story);
+            void OnFocusStory(Story story, int index);
+            /// <summary>Focus came to a section on the rail (direction: +1 down, -1 up, 0 first time).</summary>
+            void OnRailFocus(int index, int direction);
+            /// <summary>Focus (or the pointer) stayed on a section of the rail for a moment.</summary>
+            void OnRailRest(int index);
+            /// <summary>Focus reached the last rows of a section that has more to load.</summary>
+            void OnNearEnd(Section section);
         }
+
+        /// <summary>Resting on the rail this long counts as looking at the section.</summary>
+        const int RAIL_REST_MS = 375;
 
         const double RAIL = 224, GAP = 20, SIDE = 34, TOP = 26;
 
@@ -45,7 +54,8 @@ namespace Broadsheet
         /// <summary>The lit rail item, or -1 when a card (or nothing) is lit.</summary>
         int railFocus = -1;
         Card cardFocus;
-        readonly DispatcherTimer switchSection;
+        readonly DispatcherTimer switchSection, railRest;
+        int restAt = -1, railAt = -1;
 
         public Front(Images images, IListener listener)
         {
@@ -102,6 +112,12 @@ namespace Broadsheet
                 switchSection.Stop();
                 if (railFocus >= 0) Show(railFocus, false);
             };
+            railRest = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(RAIL_REST_MS) };
+            railRest.Tick += (s, e) =>
+            {
+                railRest.Stop();
+                if (restAt >= 0 && restAt < sections.Count) listener.OnRailRest(restAt);
+            };
             UpdateDate();
         }
 
@@ -144,7 +160,7 @@ namespace Broadsheet
         public string StatusText
         {
             get { return status.Text; }
-            set { status.Text = value; }
+            set { if (status.Text != value) status.Text = value; } // nothing to redraw when it's the same
         }
 
         /// <summary>Shown instead of the grid when there is nothing to show.</summary>
@@ -164,9 +180,16 @@ namespace Broadsheet
         public void SetSections(List<Section> list, bool keepFocus)
         {
             string currentId = current >= 0 && current < sections.Count ? sections[current].Id : null;
+            // Moving down the rail when a new page comes: stay on the section focus was on, not the one
+            // still showing, so no key press is lost.
+            if (railFocus >= 0 && railFocus < sections.Count) currentId = sections[railFocus].Id;
             Story focused = FocusedStory;
+            restoreIndex = cardFocus != null ? cardFocus.Index : -1;
             Restore(list, currentId, keepFocus && focused != null ? focused.Id : null, RailFocused, keepFocus);
         }
+
+        /// <summary>The focused card's place before a rebuild, for when its story isn't there any more.</summary>
+        int restoreIndex = -1;
 
         public Story FocusedStory { get { return cardFocus == null ? null : cardFocus.Story; } }
 
@@ -213,6 +236,8 @@ namespace Broadsheet
             cardFocus = null;
             if (list.Count == 0) return;
             Show(keep, false);
+            int at = restoreIndex;
+            restoreIndex = -1;
             if (keepFocus && focusedStory != null)
             {
                 foreach (Card c in cards)
@@ -222,6 +247,12 @@ namespace Broadsheet
                         FocusCard(c, true);
                         return;
                     }
+                }
+                // The story went (the page changed under it): the card in its place instead.
+                if (at >= 0 && cards.Count > 0)
+                {
+                    FocusCard(cards[Math.Min(at, cards.Count - 1)], true);
+                    return;
                 }
             }
             FocusRail(keep, false);
@@ -249,32 +280,79 @@ namespace Broadsheet
             title.Text = s.Title;
             grid.Children.Add(title);
             sub = Text(12.5, Ui.FAINT, Ui.SansMedium);
-            sub.Text = s.Stories.Count + (s.Stories.Count == 1 ? " story" : " stories")
-                + (s.Id == "saved" ? "  ·  saved in Apple News" : s.Id == "latest" ? "  ·  newest in the archive"
-                : s.Id == "more" ? "  ·  from the archive on the Mac" : "  ·  from Apple News Today");
+            sub.Text = SubText(s);
             grid.Children.Add(sub);
 
             List<Story> stories = s.Stories;
             for (int i = 0; i < stories.Count; i++)
             {
                 int style = stories.Count >= 3 && i == 0 ? Card.HERO : stories.Count >= 3 && i < 3 ? Card.BRIEF : Card.TILE;
-                Card card = new Card(style, stories[i], i, now, images);
-                card.SetDim(listener.IsDimmed(stories[i].Id));
-                Card c = card;
-                card.MouseMove += (o, e) => { if (Moved(e)) FocusCard(c, false); };
-                card.MouseLeftButtonUp += (o, e) =>
-                {
-                    FocusCard(c, false);
-                    listener.OnOpen(sections[current], c.Index);
-                    e.Handled = true;
-                };
-                cards.Add(card);
-                grid.Children.Add(card);
+                AddCard(style, stories[i], i, now);
             }
             Arrange_();
             page.ScrollTo(0, false);
             Dispatcher.BeginInvoke(new Action(Viewport), DispatcherPriority.Loaded);
             if (focusFirst && cards.Count > 0) FocusCard(cards[0], true);
+        }
+
+        void AddCard(int style, Story story, int i, long now)
+        {
+            Card card = new Card(style, story, i, now, images);
+            card.SetDim(listener.IsDimmed(story.Id));
+            Card c = card;
+            card.MouseMove += (o, e) => { if (Moved(e)) FocusCard(c, false); };
+            card.MouseLeftButtonUp += (o, e) =>
+            {
+                FocusCard(c, false);
+                listener.OnOpen(sections[current], c.Index);
+                e.Handled = true;
+            };
+            cards.Add(card);
+            grid.Children.Add(card);
+        }
+
+        /// <summary>More stories arrived for a section (its next page): their cards go under the others,
+        /// if it's the one on screen. Focus and scroll stay where they are.</summary>
+        public void Append(Section s)
+        {
+            if (current < 0 || current >= sections.Count || sections[current] != s || cards.Count >= s.Stories.Count) return;
+            long now = Dates.NowMs();
+            for (int i = cards.Count; i < s.Stories.Count; i++) AddCard(Card.TILE, s.Stories[i], i, now);
+            if (sub != null) sub.Text = SubText(s);
+            Arrange_();
+        }
+
+        static string SubText(Section s)
+        {
+            int n = Math.Max(s.Total, s.Stories.Count);
+            string count = n + (n == 1 ? " story" : " stories");
+            if (s.Id == "saved") return count + "  ·  saved in Apple News";
+            if (s.Id == "latest") return count + "  ·  newest in the archive";
+            if (s.Id == "more") return count + "  ·  from the archive on the Mac";
+            if (s.Today > 0 && n > s.Today) return count + "  ·  " + s.Today + " from Apple News Today, then more from the Mac";
+            return count + "  ·  from Apple News Today";
+        }
+
+        /// <summary>A tile's width in device pixels (the size its picture is fetched at).</summary>
+        public int TilePixels
+        {
+            get
+            {
+                double width = Math.Max(300, page.ActualWidth - SIDE * 2);
+                return (int)Math.Ceiling(Math.Floor((width - GAP * 2) / 3) * Ui.Scale * Ui.PixelsPerDip);
+            }
+        }
+
+        /// <summary>The hero card's size in device pixels, so its picture can be decoded before the section shows.</summary>
+        public int[] HeroPixels
+        {
+            get
+            {
+                double width = Math.Max(300, page.ActualWidth - SIDE * 2);
+                double tile = Math.Floor((width - GAP * 2) / 3);
+                double px = Ui.Scale * Ui.PixelsPerDip;
+                return new[] { (int)Math.Ceiling((tile * 2 + GAP) * px), (int)Math.Ceiling(Math.Max(300, Math.Round(tile * 0.62)) * px) };
+            }
         }
 
         /// <summary>Places the cards for the page's width: a hero and two briefs, then rows of three.</summary>
@@ -344,6 +422,12 @@ namespace Broadsheet
             int was = railFocus;
             railFocus = index;
             for (int i = 0; i < railItems.Count; i++) railItems[i].SetLit(i == index);
+            if (index >= 0 && index != was)  // feature: front.warm
+            {
+                listener.OnRailFocus(index, railAt < 0 ? 0 : Math.Sign(index - railAt));
+                railAt = index;
+                RestOn(index);
+            }
             if (index >= 0 && index < railItems.Count) Reveal(railScroll, railItems[index], 24);
             if (switchLater && index != current && index != was)
             {
@@ -364,7 +448,9 @@ namespace Broadsheet
                 if (cardFocus != null) cardFocus.SetFocused(false);
                 cardFocus = c;
                 c.SetFocused(true);
-                listener.OnFocusStory(c.Story);
+                listener.OnFocusStory(c.Story, c.Index);
+                Section sec = CurrentSection;
+                if (sec != null && sec.Next != null && Ladder.WantMore(c.Index, sec.Stories.Count)) listener.OnNearEnd(sec);
             }
             if (!scroll) return;
             Rect r = Bounds(c);
@@ -529,6 +615,14 @@ namespace Broadsheet
             return Math.Abs(b0 - a0) * 0.05;
         }
 
+        /// <summary>Looking at a section on the rail, by key or by pointer: say so if it lasts a moment.</summary>
+        void RestOn(int index)
+        {
+            restAt = index;
+            railRest.Stop();
+            railRest.Start();
+        }
+
         void RailClicked(int index)
         {
             switchSection.Stop();
@@ -557,7 +651,7 @@ namespace Broadsheet
 
             public void SetLit(bool v) { lit = v; InvalidateVisual(); }
 
-            protected override void OnMouseEnter(MouseEventArgs e) { hover = true; InvalidateVisual(); }
+            protected override void OnMouseEnter(MouseEventArgs e) { hover = true; InvalidateVisual(); front.RestOn(Index); }
 
             protected override void OnMouseLeave(MouseEventArgs e) { hover = false; InvalidateVisual(); }
 

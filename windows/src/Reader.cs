@@ -27,6 +27,10 @@ namespace Broadsheet
             void OnMove(int delta);
             /// <summary>Enter (or a click) on a video in the story.</summary>
             void OnPlay(string stream, string title);
+            /// <summary>Reading toward the end of what's loaded while the rest of the story is still to come.</summary>
+            void OnNearLoadedEnd();
+            /// <summary>Reading toward the end of the story (time to get the next one ready).</summary>
+            void OnNearStoryEnd();
         }
 
         /// <summary>Body text sizes (pt), from close reading to across the room; STANDARD is the default.</summary>
@@ -47,6 +51,8 @@ namespace Broadsheet
         TextBlock note;
         Loader loader;
         Picture selectedVideo;
+        /// <summary>Where the rest of the story starts while only its opening is shown; -1 when it's whole.</summary>
+        int nextBlock = -1;
 
         public Reader(Images images, IListener listener)
         {
@@ -142,14 +148,21 @@ namespace Broadsheet
         }
 
         /// <summary>Opens a story with what the card knows; the body follows with SetArticle.</summary>
+        /// <summary>The lead picture at the column's width: the size the hero card already fetched.</summary>
+        string Lead(Story s)
+        {
+            return s.ImageFor((int)Math.Ceiling(700 * Ui.Scale * Ui.PixelsPerDip));
+        }
+
         public void Show(Story s)
         {
             story = s;
             article = null;
+            nextBlock = -1;
             Clear();
             Header(s, null, 0);
             if (s.Excerpt != null) column.Children.Add(Standfirst(s.Excerpt));
-            if (s.Image != null) AddPicture(s.Image, s.ImageWidth, s.ImageHeight, null, false, true);
+            if (s.Image != null) AddPicture(Lead(s), s.ImageWidth, s.ImageHeight, null, false, true);
             loader = new Loader(this);
             loader.Margin = new Thickness(0, 34, 0, 0);
             column.Children.Add(loader);
@@ -176,6 +189,7 @@ namespace Broadsheet
             }
             if (a.Story != null && story != null && a.Story.Id != story.Id) return;
             article = a;
+            nextBlock = a.NextBlock;
             if (a.PendingJob == null) ticker.Stop();
             double y = scroll.VerticalOffset;
             Clear();
@@ -185,7 +199,7 @@ namespace Broadsheet
             if (sub != null) column.Children.Add(Standfirst(sub));
             string first = a.Blocks.Count == 0 ? null : a.Blocks[0].Type;
             bool leadImage = first == "image" || first == "video";
-            if (!leadImage && s.Image != null) AddPicture(s.Image, s.ImageWidth, s.ImageHeight, null, false, true);
+            if (!leadImage && s.Image != null) AddPicture(Lead(s), s.ImageWidth, s.ImageHeight, null, false, true);
             foreach (Article.Block b in a.Blocks) Block(b);
             if (a.PendingJob != null)
             {
@@ -203,13 +217,33 @@ namespace Broadsheet
                 note = Note(a.JobFailed ? "Apple News didn't hand over the full story, so this is the summary.\n\nRight: next story"
                     : "This is the summary only.\n\nRight: next story");
             }
-            else
+            else if (nextBlock < 0)
             {
-                note = Note("—\n\nEnter: next story");
-                note.TextAlignment = TextAlignment.Center;
+                EndNote();
             }
             scroll.UpdateLayout();
             scroll.ScrollTo(y, false);
+            AfterLayout();
+        }
+
+        void EndNote()
+        {
+            note = Note("—\n\nEnter: next story");
+            note.TextAlignment = TextAlignment.Center;
+        }
+
+        /// <summary>Where the rest of the open story starts, or -1 once it's whole.</summary>
+        public int NextBlock { get { return nextBlock; } }
+
+        /// <summary>The rest of the story (or its next part), under what's on screen; the page doesn't move.</summary>
+        public void AppendBlocks(Article rest)  // feature: reader.progressive
+        {
+            if (rest == null || article == null || nextBlock < 0) return;
+            if (rest.Story != null && story != null && rest.Story.Id != story.Id) return;
+            foreach (Article.Block b in rest.Blocks) Block(b);
+            article.Blocks.AddRange(rest.Blocks); // so a new text size or theme sets the whole of it
+            article.NextBlock = nextBlock = rest.NextBlock;
+            if (nextBlock < 0) EndNote();
             AfterLayout();
         }
 
@@ -378,7 +412,8 @@ namespace Broadsheet
                     return true;
                 case Key.Enter:
                     if (selectedVideo != null) Play(selectedVideo);
-                    else if (AtEnd()) listener.OnMove(1);
+                    else if (AtEnd() && nextBlock < 0) listener.OnMove(1);
+                    else if (AtEnd()) listener.OnNearLoadedEnd(); // the rest is on its way
                     else scroll.ScrollBy(h * 0.45);
                     return true;
                 case Key.Up:
@@ -440,6 +475,11 @@ namespace Broadsheet
             double range = scroll.Max;
             progressScale.ScaleX = range <= 0 ? 1 : Math.Min(1, scroll.VerticalOffset / range);
             double top = scroll.VerticalOffset, vh = scroll.ViewportHeight, bottom = top + vh;
+            if (article != null && vh > 0 && Ladder.Near(top, vh, scroll.Max + vh, 2))
+            {
+                if (nextBlock >= 0) listener.OnNearLoadedEnd();
+                else if (article.PendingJob == null) listener.OnNearStoryEnd();
+            }
             Picture best = null;
             double bestDistance = double.MaxValue;
             foreach (Picture p in pictures)
@@ -551,9 +591,11 @@ namespace Broadsheet
                 started = DateTime.UtcNow;
                 stage = s;
                 running = true;
+                // Shown only if the story takes a moment: one kept here arrives before it would.
                 BeginAnimation(OpacityProperty, null);
-                Opacity = 1;
+                Opacity = 0;
                 Visibility = Visibility.Visible;
+                BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)) { BeginTime = TimeSpan.FromMilliseconds(200) });
                 Hook(true);
             }
 

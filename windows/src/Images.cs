@@ -83,6 +83,46 @@ namespace Broadsheet
             }
         }
 
+        sealed class Nobody : IImageTarget
+        {
+            public void OnImage(BitmapSource b, bool fresh) { }
+        }
+
+        /// <summary>Decodes a picture into memory before its view exists (the next section's hero), at
+        /// the size that view will ask for.</summary>
+        public void Preload(string url, int w, int h)
+        {
+            Load(new Nobody(), url, w, h);
+        }
+
+        readonly Lane ahead = new Lane("img-ahead", 1, ThreadPriority.Lowest);
+        volatile int warmBatch;
+
+        /// <summary>Downloads pictures to the disk cache only (no decoding), in order; a newer list
+        /// replaces what's left of this one. For the sections beside the one on screen.</summary>
+        public void Warm(List<string> urls)  // feature: front.warm
+        {
+            int batch = ++warmBatch;
+            ahead.Run(() =>
+            {
+                foreach (string url in urls)
+                {
+                    if (batch != warmBatch) return;
+                    if (url == null) continue;
+                    string f = Path.Combine(dir, Hash(url));
+                    if (File.Exists(f)) continue;
+                    try { Download(url, f); }
+                    catch (Exception) { /* only ahead of time; the card tries again when it shows */ }
+                }
+            });
+        }
+
+        /// <summary>Stops fetching ahead (the window was minimised).</summary>
+        public void CancelWarm()
+        {
+            warmBatch++;
+        }
+
         public void Cancel(IImageTarget target)
         {
             Job j;
@@ -108,6 +148,11 @@ namespace Broadsheet
                 {
                     string f = Path.Combine(dir, Hash(job.Url));
                     if (!File.Exists(f)) Download(job.Url, f);
+                    else
+                    {
+                        // A use: pruning lets go of the least used pictures, not the oldest downloads.
+                        try { File.SetLastWriteTimeUtc(f, DateTime.UtcNow); } catch (Exception) { }
+                    }
                     if (File.Exists(f)) b = Decode(f, job.W, job.H);
                 }
                 catch (Exception)
@@ -168,7 +213,9 @@ namespace Broadsheet
             r.Timeout = 15000;
             r.ReadWriteTimeout = 20000;
             r.UserAgent = Net.UserAgent;
-            string tmp = f + ".part";
+            r.Proxy = null; // skip proxy auto-detection (seconds on the first picture otherwise)
+            r.KeepAlive = true;
+            string tmp = f + "." + Thread.CurrentThread.ManagedThreadId + ".part";
             try
             {
                 using (HttpWebResponse resp = (HttpWebResponse)r.GetResponse())
@@ -189,7 +236,7 @@ namespace Broadsheet
                         }
                     }
                 }
-                File.Move(tmp, f);
+                if (!File.Exists(f)) File.Move(tmp, f);
             }
             finally
             {

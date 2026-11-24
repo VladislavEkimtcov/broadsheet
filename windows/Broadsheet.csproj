@@ -40,7 +40,11 @@
     <Compile Include="src\Sun.cs" />
     <Compile Include="src\Model.cs" />
     <Compile Include="src\Store.cs" />
+    <Compile Include="src\Ladder.cs" />
+    <Compile Include="src\Sse.cs" />
+    <Compile Include="src\Bodies.cs" />
     <Compile Include="src\Relay.cs" />
+    <Compile Include="src\Events.cs" />
     <Compile Include="src\Ui.cs" />
     <Compile Include="src\Images.cs" />
     <Compile Include="src\Scroller.cs" />

@@ -25,7 +25,7 @@ namespace Broadsheet
     /// touchpad, icon buttons, Open in the browser, F5/F11, no Bonjour, MediaElement video, paragraph
     /// splitting). Code is tagged "// feature: <id>"; grep the ID to find the other side.
     /// </summary>
-    sealed class MainWindow : Window, Front.IListener, Reader.IListener, Player.IListener, Options.IListener
+    sealed class MainWindow : Window, Front.IListener, Reader.IListener, Player.IListener, Options.IListener, Events.IListener
     {
         /// <summary>Seconds the relay may spend getting a story's body from Apple News before answering.</summary>
         const int FETCH_WAIT = 14;
@@ -69,10 +69,33 @@ namespace Broadsheet
         bool saveBusy, reactBusy, moreBusy;
         string saveError, reactError, moreError;
 
-        readonly DispatcherTimer retry, themeTick, prefetchTimer, periodic;
-        readonly HashSet<string> prefetched = new HashSet<string>();
+        readonly DispatcherTimer retry, themeTick, prefetchTimer, periodic, reloadSoon;
         Story focusedStory;
+        int focusedIndex;
         WindowState beforeFull = WindowState.Maximized;
+
+        readonly Events events;
+        /// <summary>This computer's name for its interest list at the relay.</summary>
+        readonly string clientId;
+        /// <summary>The front page's version at the relay, to tell whether a change is news.</summary>
+        long frontVersion;
+        /// <summary>A newer front page that came while reading; shown on the way out.</summary>
+        List<Section> deferred;
+        /// <summary>Stories the relay has a body for, learnt since the front page came.</summary>
+        readonly HashSet<string> bodied = new HashSet<string>();
+        readonly HashSet<string> headsAsked = new HashSet<string>();
+        /// <summary>Sections with a page on its way.</summary>
+        readonly HashSet<string> paging = new HashSet<string>();
+        /// <summary>The open story: the relay job it waits on, when it opened, what was asked for it.</summary>
+        string waitingJob;
+        readonly System.Diagnostics.Stopwatch openClock = new System.Diagnostics.Stopwatch();
+        bool restAsked, aheadAsked;
+        /// <summary>The last key, wheel or click: live changes wait until it's been still a moment.</summary>
+        long lastInputAt;
+        // The interest list (see Want): what was sent, what waits to go, and when the last one went.
+        List<string> interestSent = new List<string>(), interestPending;
+        long interestSentAt;
+        readonly DispatcherTimer interestTimer;
 
         public MainWindow()
         {
@@ -93,6 +116,14 @@ namespace Broadsheet
             relay = new Relay(Dispatcher, prefs);
             images = new Images(Dispatcher);
             ThreadPool.QueueUserWorkItem(_ => Images.Prune(150L * 1024 * 1024));
+            ThreadPool.QueueUserWorkItem(_ => Bodies.Prune());
+            events = new Events(relay, this, Dispatcher);
+            clientId = prefs.Get("client", null);
+            if (clientId == null)
+            {
+                clientId = "win-" + Guid.NewGuid().ToString("N").Substring(0, 10);
+                prefs.Set("client", clientId);
+            }
 
             scaler.Children.Add(root);
             Content = scaler;
@@ -100,17 +131,37 @@ namespace Broadsheet
 
             retry = Timer(30000, () => { retry.Stop(); Load(); });
             themeTick = Timer(60000, ApplyTheme);
-            prefetchTimer = Timer(700, () =>
+            prefetchTimer = Timer(300, () =>  // resting on a card, not skimming past
             {
                 prefetchTimer.Stop();
-                if (focusedStory != null && reader.Visibility != Visibility.Visible) Prefetch(focusedStory);
+                AheadOfFocus();
             });
-            // A window left open all day: fetch the page again every ten minutes while it's showing.
+            // The event stream says when the Mac's page changes; without it, look every ten minutes.
             periodic = Timer(10 * 60000, () =>
             {
-                if (WindowState != WindowState.Minimized && !player.IsPlaying) { front.UpdateDate(); Load(); }
+                front.UpdateDate();
+                if (WindowState != WindowState.Minimized && !player.IsPlaying && events.DownFor > 2 * 60000) Load();
             });
             periodic.Start();
+            // A change at the relay: reload once the keys and pointer have been still for a moment, so
+            // the page doesn't change under someone moving around it.
+            reloadSoon = Timer(1500, () =>
+            {
+                long still = Dates.NowMs() - lastInputAt;
+                if (still < 8000)
+                {
+                    reloadSoon.Interval = TimeSpan.FromMilliseconds(8000 - still);
+                    return;
+                }
+                reloadSoon.Stop();
+                reloadSoon.Interval = TimeSpan.FromMilliseconds(1500);
+                Load();
+            });
+            interestTimer = Timer(400, () =>
+            {
+                interestTimer.Stop();
+                SendInterest();
+            });
 
             Paths.Log("timers");
             Ui.SetLight(WantLight());
@@ -119,19 +170,23 @@ namespace Broadsheet
             Icon = MakeIcon();
             Paths.Log("views");
 
-            List<Section> cached = relay.CachedFront();  // feature: front.cache
-            if (cached != null && cached.Count > 0)
+            relay.CachedFront((page, error) =>  // feature: front.cache
             {
-                SetBase(cached);
-                front.SetSections(shown, false);
-                loadedAt = relay.CachedFrontTime();
-                front.StatusText = "From " + Dates.Time(loadedAt) + "\nConnecting to the Mac…";
-                Paths.Log("cached front page");
-            }
-            else
-            {
-                ShowMessage("Looking for Apple News Relay on your network…");
-            }
+                if (front.HasContent) return; // the relay answered first
+                if (page != null && page.Sections.Count > 0)
+                {
+                    SetBase(page.Sections);
+                    front.SetSections(shown, false);
+                    loadedAt = relay.CachedFrontTime();
+                    frontVersion = page.Version;
+                    front.StatusText = "From " + Dates.Time(loadedAt) + "\nConnecting to the Mac…";
+                    Paths.Log("cached front page");
+                }
+                else if (!front.HasContent)
+                {
+                    ShowMessage("Looking for Apple News Relay on your network…");
+                }
+            });
 
             SourceInitialized += (s, e) => DarkTitleBar();
             ContentRendered += (s, e) => Paths.Log("first frame");
@@ -140,11 +195,12 @@ namespace Broadsheet
                 Paths.Log("loaded");
                 Ui.PixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
                 ApplyTheme();
+                events.Start();
                 Load();
             };
             Activated += (s, e) =>
             {
-                if (!front.HasContent || Dates.NowMs() - loadedAt > 10 * 60 * 1000L) Load();
+                if (!front.HasContent || (!events.Connected && Dates.NowMs() - loadedAt > 10 * 60 * 1000L)) Load();
             };
             StateChanged += (s, e) =>
             {
@@ -153,10 +209,15 @@ namespace Broadsheet
                     LeaveStory();
                     library.Save();
                     images.Trim();
+                    // Out of sight: no stream, nothing fetched ahead.
+                    events.Stop();
+                    ClearInterest();
+                    images.CancelWarm();
                 }
-                else if (WindowStyle != WindowStyle.None)
+                else
                 {
-                    prefs.Set("window", WindowState == WindowState.Maximized ? "max" : "normal");
+                    events.Start();
+                    if (WindowStyle != WindowStyle.None) prefs.Set("window", WindowState == WindowState.Maximized ? "max" : "normal");
                 }
             };
             Closing += (s, e) =>
@@ -164,7 +225,12 @@ namespace Broadsheet
                 if (player.IsPlaying) player.Close();
                 LeaveStory();
                 library.Save();
+                events.Stop();
+                ClearInterest();
             };
+            PreviewKeyDown += (s, e) => lastInputAt = Dates.NowMs();
+            PreviewMouseWheel += (s, e) => lastInputAt = Dates.NowMs();
+            PreviewMouseDown += (s, e) => lastInputAt = Dates.NowMs();
             PreviewKeyDown += OnKeyDown;
             PreviewKeyUp += (s, e) => { if (ReaderShown) reader.OnKeyUp(e.Key); };
             PreviewMouseRightButtonUp += (s, e) =>
@@ -296,10 +362,10 @@ namespace Broadsheet
                 return;
             }
             loading = true;
-            relay.Front((sections, error) =>
+            relay.Front((page, error) =>
             {
                 loading = false;
-                if (sections == null)
+                if (page == null)
                 {
                     if (relay.Origin == "last known")
                     {
@@ -314,20 +380,75 @@ namespace Broadsheet
                     Fail(error);
                     return;
                 }
-                if (sections.Count == 0)
+                if (page.Unchanged) // nothing new: nothing on screen moves
+                {
+                    loadedAt = Dates.NowMs();
+                    front.StatusText = "Updated " + Dates.Time(loadedAt) + "\nApple News via " + relay.Where;
+                    Paths.Log("front 304");
+                    MaybeRefreshToday();
+                    return;
+                }
+                if (page.Sections.Count == 0)
                 {
                     Fail("The relay has no stories yet. Open Apple News on the Mac once.");
                     return;
                 }
-                bool first = !front.HasContent;
-                SetBase(sections);
-                savedNow.Clear();
-                front.SetSections(shown, !first);
+                frontVersion = page.Version;
                 loadedAt = Dates.NowMs();
-                front.StatusText = "Updated " + Dates.Time(loadedAt) + "\nApple News via " + relay.Where;
-                FillOptions();
-                MaybeRefreshToday();
+                if (ReaderShown && front.HasContent)
+                {
+                    deferred = page.Sections; // the page under the story changes when the story closes
+                    return;
+                }
+                Apply(page.Sections);
             });
+        }
+
+        void Apply(List<Section> sections)
+        {
+            bool first = !front.HasContent;
+            deferred = null;
+            SetBase(sections);
+            savedNow.Clear();
+            front.SetSections(shown, !first);
+            front.StatusText = "Updated " + Dates.Time(loadedAt) + "\nApple News via " + relay.Where;
+            FillOptions();
+            MaybeRefreshToday();
+        }
+
+        // ------------------------------------------------------------------ live
+
+        public void OnEvent(string type, JObj data)  // feature: front.live
+        {
+            switch (type)
+            {
+                case "hello": // (re)connected: was anything missed?
+                    if ((long)data.Num("front_version", 0) != frontVersion && !loading) Load();
+                    break;
+                case "front.updated":
+                    if ((long)data.Num("version", 0) == frontVersion) break;
+                    reloadSoon.Stop();
+                    reloadSoon.Start(); // changes come in bursts
+                    break;
+                case "article.body_captured":
+                    {
+                        string id = data.Opt("id");
+                        bodied.Add(id);
+                        Article a = reader.Article;
+                        if (reading != null && id == reading.Id && waitingJob == null && a != null && a.Completeness == "summary") FetchOpen(reading); // it came after all
+                        else if (interestSent.Contains(id)) PullHead(id);
+                        break;
+                    }
+                case "job.updated":
+                    if (waitingJob != null && waitingJob == data.Opt("id") && data.Opt("state") == "running")
+                        reader.SetStage("Apple News is fetching it on the Mac…");
+                    break;
+            }
+        }
+
+        public void OnStream(bool up)
+        {
+            if (up && !front.HasContent && !loading) Load();
         }
 
         void SetBase(List<Section> sections)
@@ -357,7 +478,12 @@ namespace Broadsheet
                 }
                 List<Story> keep = new List<Story>();
                 foreach (Story st in s.Stories) if (!library.IsRead(st.Id)) keep.Add(st);
-                if (keep.Count > 0) out_.Add(new Section(s.Id, s.Title, keep));
+                if (keep.Count == 0) continue;
+                Section copy = new Section(s.Id, s.Title, keep);
+                copy.Next = s.Next;
+                copy.Total = s.Total;
+                copy.Today = s.Today;
+                out_.Add(copy);
             }
             return out_;
         }
@@ -422,16 +548,42 @@ namespace Broadsheet
             pendingRestore = at > 0.04 && at < 0.95 ? at : 0;
             library.SetPosition(s, at);
             library.Save();
-            // Ask without waiting, to say at once what the Mac is doing; then wait on its job.
-            relay.Article(s.Id, 0, (a, error) =>
+            waitingJob = null;
+            restAsked = aheadAsked = false;
+            openClock.Restart();
+            relay.Background(() => Bodies.Get(s.Id), kept =>  // feature: reader.body_cache
+            {
+                if (reader.Story != s) return;
+                if (kept == null)
+                {
+                    FetchOpen(s);
+                    return;
+                }
+                Arrived(s, new Article(kept), null, "kept here");
+                // Kept text doesn't change; whether it's saved or liked may have.
+                relay.ArticleState(s.Id, (st, e) =>
+                {
+                    if (st == null || reader.Story != s) return;
+                    library.SetReaction(s.Id, st.Str("reaction"));
+                    if (st.Has("saved")) savedNow[s.Id] = st.Bool("saved");
+                    FillOptions();
+                });
+            });
+        }
+
+        /// <summary>One trip: the relay waits for Apple News (up to FETCH_WAIT s) and sends the opening.</summary>
+        void FetchOpen(Story s)
+        {
+            relay.Article(s.Id, FETCH_WAIT, Relay.HEAD_CHARS, (a, error) =>
             {
                 if (reader.Story != s) return;
                 if (a == null || a.PendingJob == null)
                 {
-                    Arrived(s, a, error);
+                    Arrived(s, a, error, "from the Mac");
                     return;
                 }
-                reader.SetStage(a.JobState == "queued" ? "Waiting its turn on the Mac…" : "Apple News is fetching it on the Mac…");
+                waitingJob = a.PendingJob;
+                reader.SetStage(a.JobState == "queued" ? "Waiting its turn on the Mac…" : "Still fetching: big stories and Apple News+ take longer…");
                 Follow(s, a.PendingJob, 0);
             });
         }
@@ -442,48 +594,251 @@ namespace Broadsheet
             relay.Job(job, 12, (state, e) =>
             {
                 if (reader.Story != s) return;
-                if ((state == "running" || state == "queued") && round < 3)
+                if ((state == "running" || state == "queued") && round < 2)
                 {
                     reader.SetStage("Still fetching: big stories and Apple News+ take longer…");
                     Follow(s, job, round + 1);
                     return;
                 }
-                relay.Article(s.Id, 0, (again, e2) =>
+                waitingJob = null;
+                relay.Article(s.Id, 0, Relay.HEAD_CHARS, (again, e2) =>
                 {
                     if (reader.Story != s) return;
-                    Arrived(s, again, e2);
+                    Arrived(s, again, e2, "from the Mac");
                 });
             });
         }
 
-        public void OnFocusStory(Story story)
+        // ------------------------------------------------------------------ ahead of time
+
+        public void OnFocusStory(Story story, int index)
         {
             focusedStory = story;
+            focusedIndex = index;
             prefetchTimer.Stop();
             prefetchTimer.Start(); // resting on it, not skimming past
         }
 
-        void PrefetchNext()
+        /// <summary>Resting on a card: it and the cards around it.</summary>
+        void AheadOfFocus()  // feature: reader.prefetch
         {
-            if (openSection != null && openIndex + 1 < openSection.Stories.Count) Prefetch(openSection.Stories[openIndex + 1]);
+            Section sec = front.CurrentSection;
+            if (focusedStory == null || sec == null || ReaderShown) return;
+            int[] around = Ladder.Around(focusedIndex, sec.Stories.Count);
+            Want(Pick(sec, around));
+            for (int k = 0; k < Math.Min(2, around.Length); k++) PullHeadIfThere(sec.Stories[around[k]]);
         }
 
-        void Prefetch(Story s)  // feature: reader.prefetch
+        public void OnRailFocus(int index, int direction)  // feature: front.warm
         {
-            if (s.Completeness != "summary" || !prefetched.Add(s.Id)) return;
-            relay.Prefetch(s.Id);
+            if (index < 0 || index >= shown.Count) return;
+            int[] hero = front.HeroPixels;
+            int tile = front.TilePixels;
+            int[] beside = Ladder.RailNeighbours(index, shown.Count, direction);
+            List<string> urls = new List<string>();
+            foreach (int n in beside)
+            {
+                Section s = shown[n];
+                bool heroed = s.Stories.Count >= 3;
+                for (int k = 0; k < Math.Min(6, s.Stories.Count) && urls.Count < 12; k++)
+                {
+                    if (heroed && (k == 1 || k == 2)) continue; // briefs have no picture
+                    urls.Add(s.Stories[k].ImageFor(heroed && k == 0 ? hero[0] : tile));
+                }
+            }
+            images.Warm(urls);
+            if (beside.Length > 0 && shown[beside[0]].Stories.Count >= 3)
+            {
+                // The way the reader is going: that section's hero ready to draw.
+                images.Preload(shown[beside[0]].Stories[0].ImageFor(hero[0]), hero[0], hero[1]);
+            }
         }
 
-        void Arrived(Story s, Article a, string error)
+        public void OnRailRest(int index)
+        {
+            if (index < 0 || index >= shown.Count || ReaderShown) return;
+            Section s = shown[index];
+            List<Story> first = s.Stories.GetRange(0, Math.Min(3, s.Stories.Count));
+            Want(first);
+            foreach (Story st in first) PullHeadIfThere(st);
+        }
+
+        public void OnNearEnd(Section section)
+        {
+            LoadMore(section);
+        }
+
+        /// <summary>The next page of a section, under the cards already there.</summary>
+        void LoadMore(Section sec)  // feature: front.deep
+        {
+            if (sec.Next == null || !paging.Add(sec.Id)) return;
+            relay.Page(sec.Next, (page, e) =>
+            {
+                paging.Remove(sec.Id);
+                if (page == null) return;
+                Section whole = null;
+                foreach (Section b in baseSections) if (b.Id == sec.Id) whole = b;
+                if (whole != null && whole != sec)
+                {
+                    Add(whole, page.Stories, false);
+                    whole.Next = page.Next;
+                }
+                Add(sec, page.Stories, whole != null && whole != sec);
+                sec.Next = page.Next;
+                front.Append(sec);
+            });
+        }
+
+        void Add(Section sec, List<Story> more, bool unreadOnly)
+        {
+            HashSet<string> have = new HashSet<string>();
+            foreach (Story st in sec.Stories) have.Add(st.Id);
+            foreach (Story st in more) if (have.Add(st.Id) && (!unreadOnly || !library.IsRead(st.Id))) sec.Stories.Add(st);
+        }
+
+        public void OnNearLoadedEnd()
+        {
+            LoadRest(reading);
+        }
+
+        /// <summary>The rest of the open story, once the reader gets near the end of its opening.</summary>
+        void LoadRest(Story s)  // feature: reader.progressive
+        {
+            int from = reader.NextBlock;
+            if (s == null || reader.Story != s || from < 0 || restAsked) return;
+            restAsked = true;
+            relay.ArticleRest(s.Id, from, (rest, e) =>
+            {
+                restAsked = false;
+                if (reader.Story != s || rest == null) return;
+                reader.AppendBlocks(rest);
+                JObj json = rest.Json;
+                relay.Background(() => Bodies.Merge(s.Id, json), x => { });
+                if (pendingRestore > 0 && reader.NextBlock < 0)
+                {
+                    reader.RestoreFraction(pendingRestore);
+                    pendingRestore = 0;
+                }
+            });
+        }
+
+        public void OnNearStoryEnd()
+        {
+            if (aheadAsked || openSection == null) return;
+            aheadAsked = true;
+            int n = openSection.Stories.Count;
+            Want(Pick(openSection, Ladder.Reading(openIndex, n)));
+            if (openIndex + 1 < n)
+            {
+                Story next = openSection.Stories[openIndex + 1];
+                PullHeadIfThere(next);
+                images.Warm(new List<string> { next.ImageFor((int)Math.Ceiling(700 * Ui.Scale * Ui.PixelsPerDip)) });
+            }
+            if (openSection.Next != null && openIndex + 3 >= n) LoadMore(openSection);
+        }
+
+        static List<Story> Pick(Section sec, int[] indexes)
+        {
+            List<Story> out_ = new List<Story>();
+            foreach (int i in indexes) out_.Add(sec.Stories[i]);
+            return out_;
+        }
+
+        /// <summary>Whether the relay has the story's body (so its opening can come here now).</summary>
+        bool OnRelay(Story s)
+        {
+            return bodied.Contains(s.Id) || s.Completeness != "summary";
+        }
+
+        void PullHeadIfThere(Story s)
+        {
+            if (OnRelay(s)) PullHead(s.Id);
+        }
+
+        /// <summary>Puts a story's opening on this computer, if the relay has it and this computer doesn't.</summary>
+        void PullHead(string id)
+        {
+            if (!relay.Modern || headsAsked.Count > 500 || !headsAsked.Add(id)) return;
+            relay.Background(() => Bodies.Has(id), has =>
+            {
+                if (has) return;
+                relay.Head(id, data => { if (data != null) Bodies.Put(data); });
+            });
+        }
+
+        /// <summary>
+        /// The stories the reader may open next, sent to the relay (which has Apple News fetch them in
+        /// that order). Only stories the relay has no body for go; a list the same as the last isn't sent
+        /// again, and lists go at most every 400 ms, the newest replacing the one before.
+        /// </summary>
+        void Want(List<Story> stories)
+        {
+            List<string> ids = new List<string>();
+            foreach (Story st in stories) if (st != null && !OnRelay(st) && !ids.Contains(st.Id)) ids.Add(st.Id);
+            List<string> last = interestPending ?? interestSent;
+            if (ids.Count == last.Count && ids.TrueForAll(last.Contains)) return;
+            interestPending = ids;
+            interestTimer.Stop();
+            interestTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(1, interestSentAt + 400 - Dates.NowMs()));
+            interestTimer.Start();
+        }
+
+        void SendInterest()
+        {
+            if (interestPending == null) return;
+            interestSent = interestPending;
+            interestPending = null;
+            interestSentAt = Dates.NowMs();
+            relay.Interest(clientId, interestSent, (cached, e) =>
+            {
+                if (cached == null) return;
+                foreach (string id in cached)
+                {
+                    bodied.Add(id);
+                    PullHead(id);
+                }
+            });
+        }
+
+        void ClearInterest()
+        {
+            interestTimer.Stop();
+            interestPending = null;
+            if (interestSent.Count == 0) return;
+            interestSent = new List<string>();
+            relay.ClearInterest(clientId);
+        }
+
+        void Arrived(Story s, Article a, string error, string source)
         {
             reader.SetArticle(a, error);
             if (a == null) return;
-            if (a.PendingJob == null) PrefetchNext();
+            Paths.Log("open " + s.Id + " " + openClock.ElapsedMilliseconds + " ms " + source + (a.NextBlock >= 0 ? " (opening)" : "") + " " + a.Completeness);
+            if (a.PendingJob == null && a.Completeness != "summary")
+            {
+                bodied.Add(s.Id);
+                if (source != "kept here")
+                {
+                    JObj json = a.Json;
+                    relay.Background(() => { Bodies.Put(json); return true; }, x => { });
+                }
+                // Right should open at once: the next story, fetched ahead.
+                if (openSection != null && openIndex + 1 < openSection.Stories.Count)
+                {
+                    Story next = openSection.Stories[openIndex + 1];
+                    Want(new List<Story> { next });
+                    PullHeadIfThere(next);
+                }
+            }
             library.SetReaction(s.Id, a.Reaction);
             if (pendingRestore > 0 && a.PendingJob == null)
             {
-                reader.RestoreFraction(pendingRestore);
-                pendingRestore = 0;
+                if (a.NextBlock >= 0) LoadRest(s); // the place is somewhere in the whole story
+                else
+                {
+                    reader.RestoreFraction(pendingRestore);
+                    pendingRestore = 0;
+                }
             }
         }
 
@@ -510,10 +865,12 @@ namespace Broadsheet
         {
             LeaveStory();
             reading = null;
+            waitingJob = null;
             library.Save();
             reader.Visibility = Visibility.Collapsed;
             Title = "Broadsheet";
-            if (front.CurrentSection == openSection) front.FocusStory(openIndex);
+            if (deferred != null) Apply(deferred); // the page changed while reading
+            else if (front.CurrentSection == openSection) front.FocusStory(openIndex);
             front.RefreshDim();
         }
 
@@ -806,7 +1163,8 @@ namespace Broadsheet
                     return;
                 }
                 JObj news = o.Obj("news_app"), jobs = o.Obj("jobs"), acct = o.Obj("account");
-                int waiting = jobs == null ? 0 : jobs.Int("queued") + jobs.Int("running");
+                // Stories fetched ahead aren't anyone waiting.
+                int waiting = jobs == null ? 0 : Math.Max(0, jobs.Int("queued") + jobs.Int("running") - jobs.Int("warming"));
                 options.SetFooter("Mac connected  ·  News " + (news != null && news.Bool("running") ? "open" : "closed")
                     + "  ·  " + (waiting == 0 ? "nothing waiting" : waiting + " waiting")
                     + (acct != null && acct.Bool("news_plus") ? "  ·  Apple News+" : ""));

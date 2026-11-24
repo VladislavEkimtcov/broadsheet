@@ -45,6 +45,7 @@ renumbered when the ports started sharing one version).
 | `front.rail` | Rail of sections on the left; hero, two briefs, rows of picture cards; skimming the rail | ✅ | ⚠️ 0.4.0 | ✅ | Phone: the sections as a strip along the top, the section in one column (two where wide); see `phone.strip`, `phone.feed` |
 | `front.cache` | Last front page shows at once from cache (read off the UI thread), then is checked with the Mac: nothing comes back when it didn't change (304) | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 |  |
 | `front.live` | The page follows the Mac as it changes (the relay's event stream), once the remote has been still for 8 s; without the stream, a check every 10 minutes | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | A change that comes while reading shows when the story closes |
+| `front.back` | Back steps out of the front page: from a story to its section on the rail, then to the rail's top entry, then out of the app | ✅ | — | ✅ | One step per press (a held key takes one). Windows: Backspace, Esc, the mouse's back button; at the top entry the window stays open (Esc still leaves full screen first). Phone: no rail; Back leaves from the front page (`phone.back`) |
 | `front.deep` | Sections run deep: Apple News Today's stories first, then more from the topic's or publisher's own feed (or what the section carried today); the next page loads as focus nears the end | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | Composed by the relay (0.3); a 0.2 relay gives Today's stories only |
 | `front.warm` | Moving along the rail readies the sections beside it (pictures fetched ahead, the next hero decoded); resting on a section has the Mac fetch its first stories | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | Windows: hovering a section counts as resting on it. Phone: choosing a section on the strip counts as resting on it |
 | `front.hero_contrast` | Hero's words get dark blocks where the picture under them is too light (WCAG contrast) | ✅ | ✅ 0.4.0 | ✅ |  |
@@ -108,7 +109,7 @@ renumbered when the ports started sharing one version).
 | `phone.sheet` | Options as a sheet from the bottom: tap a tile, ‹ › for values, drag the text size slider, tap the shade to close | — | ✅ 0.4.0 | — | TV and Windows: the panel from the right (`opt.panel`) |
 | `phone.relay_field` | Relay address in Options (empty: found by itself); writes relay.conf | — | ✅ 0.4.0 | ⏳ 0.4.0 | TV: relay.conf pushed with adb. Windows could have it: typing an address is easy there |
 | `phone.insets` | Edge to edge under the status bar and gesture bar, light or dark icons with the page; rotating keeps the place | — | ✅ 0.4.0 | — | TV: full screen, landscape. Windows: a window |
-| `phone.back` | System Back closes the video, the options, the story, then leaves the app | — | ✅ 0.4.0 | — | TV: the remote's Back, in each view. Windows: Esc, Backspace, the mouse's back button |
+| `phone.back` | System Back closes the video, the options, the story, then leaves the app | — | ✅ 0.4.0 | — | TV: the remote's Back, in each view, and on the front page `front.back`. Windows: Esc, Backspace, the mouse's back button |
 | `phone.offline` | "The Mac isn't answering" as a note over the cached page, which stays readable; a tap tries again | — | ✅ 0.4.0 | — | TV and Windows: the rail's status line says it |
 
 ## Windows only

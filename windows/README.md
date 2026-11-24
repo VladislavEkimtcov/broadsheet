@@ -32,7 +32,8 @@ release zip) or from `bin\`.
 ## Use
 
 - **Keyboard:** the TV's D-pad on the arrow keys. On the front page the arrows move between the
-  rail and the cards and Enter opens a story. In the reader, Up/Down glide half a screen,
+  rail and the cards and Enter opens a story; Esc or Backspace goes from a story to its section on the rail, then to
+  the rail's top entry. In the reader, Up/Down glide half a screen,
   Space/Page Down move a screen, Left/Right go to the previous/next story, and Esc or Backspace
   goes back. M or the Menu key opens Options. F5 refreshes, F11 toggles full screen.
 - **Mouse and touchpad:** hovering focuses a card and clicking opens it. The wheel scrolls like a

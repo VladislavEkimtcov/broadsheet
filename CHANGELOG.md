@@ -7,6 +7,10 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- TV: Back on the front page no longer closes Broadsheet straight away. From a story it goes
+  to the section on the rail, then to the rail's top entry; only Back there leaves the app.
+- Windows: Backspace, Esc and the mouse's back button do the same on the front page (story,
+  then its section on the rail, then the top entry); the window stays open.
 - Windows: **videos play inside the app**, HLS included (30 of the last 31 videos in the relay were
   HLS). Windows' own player (WinRT `MediaPlayer`, `AdaptiveMediaSource` for HLS) replaces WPF's
   MediaElement, which couldn't open HLS and crashed on Windows 10 IoT LTSC. Still nothing to

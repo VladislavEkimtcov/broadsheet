@@ -240,6 +240,12 @@ namespace Broadsheet
                 else OpenOptions(OptionsTarget(), true);
                 e.Handled = true;
             };
+            MouseUp += (s, e) =>  // the reader handles its own back button first
+            {
+                if (e.ChangedButton != MouseButton.XButton1 || player.IsPlaying || options.IsOpen || ReaderShown) return;
+                front.OnBack();  // feature: front.back
+                e.Handled = true;
+            };
         }
 
         DispatcherTimer Timer(int ms, Action a)

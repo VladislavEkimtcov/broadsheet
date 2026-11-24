@@ -80,6 +80,8 @@ your network by itself.
   quick settings do), with no location permission.
 - **D-pad only:** Down/OK reads on (OK at the end opens the next story), Up goes back, Left/Right
   the previous/next story, Fast-forward/Rewind a page, Menu the options, Back the front page.
+  On the front page Back steps out: from a story to its section on the rail, then to the top of
+  the rail; Back there leaves the app.
 - **No ads:** the relay removes ad slots, sponsored stories and publisher promotions.
 - **Apple News+:** whole stories when the Mac's account has Apple News+; otherwise the opening,
   clearly marked.

@@ -10,7 +10,10 @@ $dir = Join-Path $env:LOCALAPPDATA 'Programs\Broadsheet'
 $exe = Join-Path $dir 'Broadsheet.exe'
 $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'Broadsheet.lnk'
 $run = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-Get-Process Broadsheet -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+# Stop a running copy and wait until it has let go of the exe (Stop-Process returns before that).
+$running = @(Get-Process Broadsheet -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })
+$running | Stop-Process -Force
+$running | ForEach-Object { $_.WaitForExit(10000) | Out-Null }
 if ($Uninstall) {
   Remove-ItemProperty -Path $run -Name Broadsheet -ErrorAction SilentlyContinue
   Remove-Item $lnk, $dir -Recurse -Force -ErrorAction SilentlyContinue

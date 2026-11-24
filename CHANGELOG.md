@@ -5,6 +5,11 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
+## Unreleased
+
+- Windows: `install.ps1` waits for a running Broadsheet to close before copying the new exe
+  (it could fail with "file in use" when updating over a running copy).
+
 ## 0.4.0
 
 2026-11-23. **Apple News on Android phones.** The same `broadsheet.apk` now runs on phones and

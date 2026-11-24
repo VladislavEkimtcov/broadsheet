@@ -111,10 +111,18 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     private String keptUnread;
     /** The story on screen in the reader, or null while the front page shows. */
     private Story reading;
+    /** More stories like this: {title, path, kind, id} per choice, for the story in Options. */
     private final List<String[]> moreChoices = new ArrayList<>();
-    private int moreIndex;
-    private boolean saveBusy, reactBusy, moreBusy;
-    private String saveError, reactError, moreError;
+    /** Each choice's stories, fetched as soon as Options opens (path → list, when, error). */
+    private final java.util.Map<String, List<Story>> moreLists = new java.util.HashMap<>();
+    private final java.util.Map<String, Long> moreAt = new java.util.HashMap<>();
+    private final java.util.Map<String, String> moreErrors = new java.util.HashMap<>();
+    private final Set<String> moreLoading = new HashSet<>();
+    /** The choice picked before its stories were in: opens when they are. */
+    private String[] moreWanted;
+    private List<Options.Tile> moreRows;
+    private boolean saveBusy, reactBusy;
+    private String saveError, reactError;
 
     private final Runnable retry = this::load;
     private final Runnable themeTick = this::applyTheme;
@@ -944,10 +952,9 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     }
 
     private void openOptions(Story s, boolean slide) {
-        if (s != target) {
-            saveError = reactError = moreError = null;
-            moreIndex = 0;
-        }
+        if (s != target) saveError = reactError = null;
+        moreWanted = null;
+        moreRows = null;
         target = s;
         moreChoices.clear();
         if (s != null) {
@@ -963,7 +970,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             }
             moreChoices.add(new String[] {"Related stories", "/v1/articles/" + s.id + "/related", null, null});  // feature: opt.related
         }
-        moreIndex = Math.min(moreIndex, Math.max(0, moreChoices.size() - 1));
+        for (String[] c : moreChoices) preloadMore(c);
 
         saveTile = new Options.Tile("☆", "Save story on Mac");  // feature: opt.save
         saveTile.onOk = this::toggleSave;
@@ -976,13 +983,9 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         reactTile.segment = "dislike".equals(r) ? 1 : 0;
         unreadTile = new Options.Tile("○", "Mark as unread");  // feature: opt.unread
         unreadTile.onOk = this::toggleRead;
-        moreTile = new Options.Tile("≡", "More like this");
-        moreTile.onStep = d -> {
-            moreIndex = Math.max(0, Math.min(moreChoices.size() - 1, moreIndex + d));
-            moreError = null;
-            fillOptions();
-        };
-        moreTile.onOk = this::openMore;
+        moreTile = new Options.Tile("≡", "More stories like this");
+        moreTile.onOk = this::openMoreMenu;
+        moreTile.opens = true;
         sizeTile = new Options.Tile("Aa", "Text size");  // feature: opt.text_size
         sizeTile.slider = Reader.SIZES.length;
         sizeTile.onStep = d -> {
@@ -1103,7 +1106,6 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         Story s = target;
         boolean has = s != null;
         String pick = Ui.touch ? "Long-press a story first" : "Choose a story first";
-        String ok = Ui.touch ? "Tap" : "OK";
 
         saveTile.enabled = has && !saveBusy;
         boolean saved = has && isSaved(s);
@@ -1127,12 +1129,8 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         unreadTile.hint = !has ? pick : null;
 
         moreTile.enabled = has && !moreChoices.isEmpty();
-        String[] choice = moreTile.enabled ? moreChoices.get(moreIndex) : null;
-        moreTile.label = choice != null ? choice[0] : "More like this";
-        moreTile.value = moreChoices.size() > 1 ? (moreIndex + 1) + " of " + moreChoices.size() : "";
-        moreTile.hint = !has ? pick : moreBusy ? "Loading…" : moreError != null ? moreError
-                : moreChoices.size() > 1 ? (Ui.touch ? "‹ › more choices  ·  Tap to show" : "◀ ▶ more choices  ·  OK to show")
-                : ok + " to show";
+        moreTile.hint = !has ? pick : null;
+        fillMoreRows();
 
         int step = reader.sizeStep();
         sizeTile.position = step;
@@ -1222,30 +1220,98 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         });
     }
 
-    private void openMore() {
-        if (moreChoices.isEmpty() || moreBusy) return;
-        final String[] c = moreChoices.get(moreIndex);
-        moreBusy = true;
-        moreError = null;
-        fillOptions();
+    // ------------------------------------------------------- more stories like this
+
+    /** Fetches a choice's stories ahead (once every ten minutes), with their pictures and the
+     *  first openings, so picking it in the pop-up shows the section at once. */
+    private void preloadMore(final String[] c) {  // feature: opt.more_menu
+        Long at = moreAt.get(c[1]);
+        if (moreLoading.contains(c[1]) || (at != null && SystemClock.uptimeMillis() - at < 10 * 60_000L)) return;
+        moreLoading.add(c[1]);
+        moreErrors.remove(c[1]);
         relay.stories(c[1], (list, error) -> {
-            moreBusy = false;
+            moreLoading.remove(c[1]);
             if (list == null || list.isEmpty()) {
-                moreError = list == null ? error : "Nothing in the archive yet";
-                fillOptions();
-                return;
+                moreErrors.put(c[1], list == null ? error : "Nothing in the archive yet");
+                if (moreWanted != null && moreWanted[1].equals(c[1])) moreWanted = null;
+            } else {
+                moreLists.put(c[1], list);
+                moreAt.put(c[1], SystemClock.uptimeMillis());
+                warmMore(list);
+                if (moreWanted != null && moreWanted[1].equals(c[1]) && options.isOpen()) {
+                    openMore(moreWanted);
+                    return;
+                }
             }
-            showExtra(new Relay.Section("more", c[0], list), true);
-            if (c[2] == null) return;
-            // Ask News on the Mac for more of the channel or topic; show them when they're in.
-            relay.refreshTag(c[2], c[3], (job, e) -> {
-                if (job == null) return;
-                relay.job(job, 40, (state, e2) -> relay.stories(c[1], (more, e3) -> {
-                    if (more != null && extra != null && extra.title.equals(c[0]) && more.size() > extra.stories.size()) {
-                        showExtra(new Relay.Section("more", c[0], more), false);
-                    }
-                }));
-            });
+            fillOptions();
+        });
+    }
+
+    /** The pictures the section's first cards draw, and the first three openings. */
+    private void warmMore(List<Story> list) {
+        int[] hero = front.heroSize();
+        int tile = front.tileWidth();
+        boolean heroed = list.size() >= 3;
+        List<String> urls = new ArrayList<>();
+        for (int k = 0; k < Math.min(8, list.size()); k++) {
+            if (heroed && (k == 1 || k == 2)) continue;  // briefs have no picture
+            urls.add(list.get(k).imageFor(heroed && k == 0 ? hero[0] : tile));
+        }
+        images.warm(urls);
+        for (int k = 0; k < Math.min(3, list.size()); k++) pullHeadIfThere(list.get(k));
+    }
+
+    private void openMoreMenu() {
+        if (moreChoices.isEmpty()) return;
+        moreRows = new ArrayList<>();
+        for (final String[] c : moreChoices) {
+            Options.Tile t = new Options.Tile(null, c[0]);
+            t.onOk = () -> openMore(c);
+            moreRows.add(t);
+        }
+        fillMoreRows();
+        options.openPopup("More stories like this", moreRows);
+    }
+
+    /** Each row: how many stories are in, or that they're on their way, or what went wrong. */
+    private void fillMoreRows() {
+        if (moreRows == null) return;
+        for (int i = 0; i < moreRows.size() && i < moreChoices.size(); i++) {
+            String[] c = moreChoices.get(i);
+            Options.Tile t = moreRows.get(i);
+            List<Story> list = moreLists.get(c[1]);
+            boolean wanted = moreWanted != null && moreWanted[1].equals(c[1]);
+            t.value = wanted ? "Loading…" : list != null ? list.size() + (list.size() == 1 ? " story" : " stories")
+                    : moreLoading.contains(c[1]) ? "…" : "";
+            t.hint = list == null ? moreErrors.get(c[1]) : null;
+        }
+    }
+
+    private void openMore(final String[] c) {
+        List<Story> list = moreLists.get(c[1]);
+        if (list == null) {
+            // Not in yet (or it failed): ask now, and open it when it comes.
+            moreWanted = c;
+            moreAt.remove(c[1]);
+            preloadMore(c);
+            fillOptions();
+            return;
+        }
+        moreWanted = null;
+        showExtra(new Relay.Section("more", c[0], new ArrayList<>(list)), true);
+        if (c[2] == null) return;
+        // Ask News on the Mac for more of the channel or topic; show them when they're in.
+        relay.refreshTag(c[2], c[3], (job, e) -> {
+            if (job == null) return;
+            relay.job(job, 40, (state, e2) -> relay.stories(c[1], (more, e3) -> {
+                if (more != null && !more.isEmpty()) {
+                    moreLists.put(c[1], more);
+                    moreAt.put(c[1], SystemClock.uptimeMillis());
+                }
+                if (more != null && extra != null && extra.title.equals(c[0]) && more.size() > extra.stories.size()) {
+                    showExtra(new Relay.Section("more", c[0], more), false);
+                }
+            }));
         });
     }
 
@@ -1299,6 +1365,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     /** Touch: Back closes the top thing (video, options, story); on the front page it leaves. */
     private boolean back() {  // feature: phone.back
         if (player.playing()) player.closeNow();
+        else if (options.isPopupOpen()) options.closePopup();
         else if (options.isOpen()) options.close();
         else if (reader.getVisibility() == View.VISIBLE) onClose();
         else return false;

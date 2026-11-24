@@ -7,6 +7,13 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Options, all ports: **More stories like this ›** replaces the tile that stepped through More
+  from / More on / Related. OK (or Right, a tap, a click) opens a pop-up in the middle of the
+  screen with every choice and how many stories it has; Back, Left or a tap beside it closes it.
+  The lists, their first pictures and the first stories' openings are fetched as soon as
+  Options opens, so a pick shows its section at once.
+- Windows: Refresh now has ‹ › buttons around how often (25 min, Hourly, Off), like the phone;
+  ◀ ▶ still step it, and a click anywhere else on the tile refreshes.
 - Options, all ports: shorter. "Save story" reads **Save story on Mac** (**Unsave story on Mac**
   once saved); "Appearance" is now **Dark mode**. The explanations under Save, Like or dislike,
   Mark as read and Open in the browser are gone (errors still show there). More from says "OK

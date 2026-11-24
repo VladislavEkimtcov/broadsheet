@@ -27,6 +27,10 @@ import java.util.function.IntConsumer;
  * <p>Touch ({@link Ui#touch}): a sheet that rises from the bottom (☰ in the top bar). A tap on
  * a tile does it, the ‹ › on a tile change its value, the text size slider follows the finger,
  * and a tap on the shade above closes it.
+ *
+ * <p>A tile can open a pop-up in the middle of the screen, a short list of its own tiles (More
+ * stories like this): Up/Down and OK there, Back or Left closes it; on touch a tap picks a row and
+ * a tap beside it closes it.
  */
 final class Options extends FrameLayout {  // feature: opt.panel
     interface Listener {
@@ -48,6 +52,8 @@ final class Options extends FrameLayout {  // feature: opt.panel
         int segment;
         IntConsumer onStep;
         Runnable onOk;
+        /** OK opens a pop-up (a drawn › at the edge says so); Right opens it too. */
+        boolean opens;
 
         Tile(String icon, String label) {
             this.icon = icon;
@@ -67,6 +73,14 @@ final class Options extends FrameLayout {  // feature: opt.panel
     private final List<TileView> views = new ArrayList<>();
     private int selected;
     private boolean open, touched;
+    private final View popupShade;
+    private final LinearLayout popup, popupColumn;
+    private final ScrollView popupScroll;
+    private final TextView popupHeading;
+    private final List<Tile> popupTiles = new ArrayList<>();
+    private final List<TileView> popupViews = new ArrayList<>();
+    private int popupSelected;
+    private boolean popupOpen;
 
     Options(Context c, Listener listener) {
         super(c);
@@ -77,7 +91,9 @@ final class Options extends FrameLayout {  // feature: opt.panel
         addView(scrim, new LayoutParams(-1, -1));
         if (Ui.touch) scrim.setOnClickListener(v -> close());
 
-        panel = Ui.touch ? new Sheet(c) : new LinearLayout(c);
+        scroll = new ScrollView(c);
+        scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
+        panel = Ui.touch ? new Sheet(c, scrollParams, 0.85f) : new LinearLayout(c);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(Ui.dp(22), Ui.dp(26), Ui.dp(22), Ui.dp(18));
         panel.setBackground(new Edge());
@@ -92,7 +108,6 @@ final class Options extends FrameLayout {  // feature: opt.panel
         cl.topMargin = Ui.dp(6);
         cl.bottomMargin = Ui.dp(14);
         panel.addView(context, cl);
-        scroll = new ScrollView(c);
         scroll.setFocusable(false);
         // The relay address field on touch takes typing; on the TV the panel keeps the keys.
         scroll.setDescendantFocusability(Ui.touch ? FOCUS_AFTER_DESCENDANTS : FOCUS_BLOCK_DESCENDANTS);
@@ -103,7 +118,6 @@ final class Options extends FrameLayout {  // feature: opt.panel
         column = new LinearLayout(c);
         column.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(column, new ViewGroup.LayoutParams(-1, -2));
-        scrollParams = new LinearLayout.LayoutParams(-1, 0, 1);
         panel.addView(scroll, scrollParams);
         footer = Ui.text(c, 12, Ui.FAINT, Ui.sans);
         footer.setLineSpacing(0, 1.2f);
@@ -117,6 +131,77 @@ final class Options extends FrameLayout {  // feature: opt.panel
         } else {
             addView(panel, new LayoutParams(Ui.dp(WIDTH_DP), -1, Gravity.END));
         }
+
+        // feature: opt.more_menu
+        popupShade = new View(c);
+        popupShade.setBackgroundColor(0x59000000);
+        popupShade.setVisibility(GONE);
+        popupShade.setOnClickListener(v -> closePopup());
+        addView(popupShade, new LayoutParams(-1, -1));
+        popupScroll = new ScrollView(c);
+        popupScroll.setFocusable(false);
+        popupScroll.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+        popupScroll.setVerticalScrollBarEnabled(false);
+        popupScroll.setOverScrollMode(OVER_SCROLL_NEVER);
+        popupScroll.setVerticalFadingEdgeEnabled(true);
+        popupScroll.setFadingEdgeLength(Ui.dp(18));
+        LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, 0, 1);
+        popup = new Sheet(c, pp, 0.8f);
+        popup.setOrientation(LinearLayout.VERTICAL);
+        popup.setPadding(Ui.dp(22), Ui.dp(20), Ui.dp(22), Ui.dp(22));
+        popup.setBackground(new Box());
+        popup.setClickable(true);  // taps on it don't reach the shade
+        popup.setVisibility(GONE);
+        popupHeading = Ui.text(c, 22, Ui.INK, Ui.display);
+        LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(-1, -2);
+        hl.bottomMargin = Ui.dp(14);
+        popup.addView(popupHeading, hl);
+        popupColumn = new LinearLayout(c);
+        popupColumn.setOrientation(LinearLayout.VERTICAL);
+        popupScroll.addView(popupColumn, new ViewGroup.LayoutParams(-1, -2));
+        popup.addView(popupScroll, pp);
+        int screen = getResources().getDisplayMetrics().widthPixels;
+        addView(popup, new LayoutParams(Ui.touch ? Math.min(screen - Ui.dp(32), Ui.dp(480)) : Ui.dp(560), -2, Gravity.CENTER));
+    }
+
+    /** Opens the pop-up over the panel with these rows; OK (or a tap) on a row runs its onOk. */
+    void openPopup(String title, List<Tile> rows) {
+        popupTiles.clear();
+        popupTiles.addAll(rows);
+        popupViews.clear();
+        popupColumn.removeAllViews();
+        for (int i = 0; i < popupTiles.size(); i++) {
+            TileView v = new TileView(getContext(), popupTiles.get(i));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            if (i > 0) lp.topMargin = Ui.dp(4);
+            popupColumn.addView(v, lp);
+            popupViews.add(v);
+        }
+        popupSelected = Ui.touch ? -1 : 0;
+        popupHeading.setText(title);
+        popupOpen = true;
+        popupShade.setVisibility(VISIBLE);
+        popup.setVisibility(VISIBLE);
+        popupShade.setAlpha(0f);
+        popup.setAlpha(0f);
+        popupShade.animate().alpha(1f).setDuration(120).start();
+        popup.animate().alpha(1f).setDuration(120).start();
+        popupScroll.scrollTo(0, 0);
+        refresh();
+    }
+
+    boolean isPopupOpen() {
+        return popupOpen;
+    }
+
+    void closePopup() {
+        if (!popupOpen) return;
+        popupOpen = false;
+        popupShade.animate().cancel();
+        popup.animate().cancel();
+        popupShade.setVisibility(GONE);
+        popup.setVisibility(GONE);
+        refresh();
     }
 
     /** Touch: clear of the gesture bar, at most 600 dp wide (landscape, tablets). */
@@ -142,16 +227,22 @@ final class Options extends FrameLayout {  // feature: opt.panel
         column.addView(v, lp);
     }
 
-    /** The sheet's height: what it holds, at most 85% of the screen; the tiles scroll inside. */
-    private final class Sheet extends LinearLayout {
-        Sheet(Context c) {
+    /** A column as tall as what it holds, at most {@code max} of the screen; the child laid out
+     *  with {@code scrollParams} scrolls inside (the touch sheet, the pop-up). */
+    private static final class Sheet extends LinearLayout {
+        private final LinearLayout.LayoutParams scrollParams;
+        private final float fraction;
+
+        Sheet(Context c, LinearLayout.LayoutParams scrollParams, float max) {
             super(c);
+            this.scrollParams = scrollParams;
+            this.fraction = max;
         }
 
         @Override
         protected void onMeasure(int wSpec, int hSpec) {
             int max = Math.round((MeasureSpec.getMode(hSpec) == MeasureSpec.UNSPECIFIED
-                    ? getResources().getDisplayMetrics().heightPixels : MeasureSpec.getSize(hSpec)) * 0.85f);
+                    ? getResources().getDisplayMetrics().heightPixels : MeasureSpec.getSize(hSpec)) * fraction);
             scrollParams.height = -2;
             scrollParams.weight = 0;
             super.onMeasure(wSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
@@ -169,6 +260,7 @@ final class Options extends FrameLayout {  // feature: opt.panel
     /** Opens with these tiles; selects the first one that can do something. {@code slide}: animate
      *  in (not when it is only being built again in new colours). */
     void open(List<Tile> list, String about, boolean slide) {
+        closePopup();
         tiles.clear();
         tiles.addAll(list);
         views.clear();
@@ -234,6 +326,7 @@ final class Options extends FrameLayout {  // feature: opt.panel
 
     void close() {
         if (!open) return;
+        closePopup();
         open = false;
         if (Ui.touch) {
             View f = findFocus();
@@ -258,7 +351,48 @@ final class Options extends FrameLayout {  // feature: opt.panel
 
     /** Redraws the tiles after their state changed. */
     void refresh() {
-        for (int i = 0; i < views.size(); i++) views.get(i).bind(i == selected);
+        for (int i = 0; i < views.size(); i++) views.get(i).bind(i == selected && !popupOpen);
+        for (int i = 0; i < popupViews.size(); i++) popupViews.get(i).bind(i == popupSelected);
+    }
+
+    private void revealPopup() {
+        if (popupSelected < 0 || popupSelected >= popupViews.size()) return;
+        View v = popupViews.get(popupSelected);
+        int top = v.getTop() - Ui.dp(16), bottom = v.getBottom() + Ui.dp(16);
+        int y = popupScroll.getScrollY(), h = popupScroll.getHeight();
+        if (top < y) popupScroll.smoothScrollTo(0, Math.max(0, top));
+        else if (bottom > y + h) popupScroll.smoothScrollTo(0, bottom - h);
+    }
+
+    /** Keys while the pop-up is open: it takes them all. */
+    private boolean onPopupKey(KeyEvent e) {
+        int k = e.getKeyCode();
+        Tile t = popupSelected >= 0 && popupSelected < popupTiles.size() ? popupTiles.get(popupSelected) : null;
+        switch (k) {
+            case KeyEvent.KEYCODE_MENU:
+                if (e.getRepeatCount() == 0) close();
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+            case KeyEvent.KEYCODE_ESCAPE:
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                if (e.getRepeatCount() == 0) closePopup();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                if (popupSelected > 0) popupSelected--;
+                break;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (popupSelected < popupTiles.size() - 1) popupSelected++;
+                break;
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+                if (t != null && t.enabled && t.onOk != null && e.getRepeatCount() == 0) t.onOk.run();
+                break;
+            default:
+                return true;
+        }
+        refresh();
+        revealPopup();
+        return true;
     }
 
     private void reveal() {
@@ -277,6 +411,7 @@ final class Options extends FrameLayout {  // feature: opt.panel
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
         touched = true;
+        if (popupOpen) return onPopupKey(e);
         Tile t = selected < tiles.size() ? tiles.get(selected) : null;
         switch (k) {
             case KeyEvent.KEYCODE_MENU:
@@ -294,7 +429,8 @@ final class Options extends FrameLayout {  // feature: opt.panel
             case KeyEvent.KEYCODE_DPAD_RIGHT: {
                 int d = k == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
                 if (t == null || !t.enabled) break;
-                if (t.segments != null) t.segment = Math.max(0, Math.min(t.segments.length - 1, t.segment + d));
+                if (t.opens && d > 0 && t.onOk != null && e.getRepeatCount() == 0) t.onOk.run();
+                else if (t.segments != null) t.segment = Math.max(0, Math.min(t.segments.length - 1, t.segment + d));
                 else if (t.onStep != null) t.onStep.accept(d);
                 break;
             }
@@ -454,6 +590,12 @@ final class Options extends FrameLayout {  // feature: opt.panel
                 Icons.draw(c, Icons.RIGHT, stepRight + Ui.px(7), by + Ui.px(7), Ui.px(20), fill);
                 right = stepRight - Ui.px(10);
             }
+            if (tile.opens) {
+                // A drawn › at the edge: this one opens a pop-up.
+                fill.setColor(Ui.alpha(fg, a));
+                Icons.draw(c, Icons.RIGHT, right - Ui.px(20), top - Ui.px(18), Ui.px(24), fill);
+                right -= Ui.px(24);
+            }
             String v = tile.value == null ? "" : tile.value;
             value.setColor(Ui.alpha(on ? Ui.INK : Ui.MUTED, a));
             float vw = value.measureText(v);
@@ -527,6 +669,32 @@ final class Options extends FrameLayout {  // feature: opt.panel
                 String t = TextUtils.ellipsize(tile.hint, hint, right - x, TextUtils.TruncateAt.END).toString();
                 c.drawText(t, x, top + Ui.px(24), hint);
             }
+        }
+    }
+
+    /** The pop-up's ground: the rail's colour inside a hairline. */
+    private static final class Box extends android.graphics.drawable.Drawable {
+        private final Paint paint = new Paint();
+
+        @Override
+        public void draw(Canvas c) {
+            android.graphics.Rect b = getBounds();
+            paint.setColor(Ui.RULE);
+            c.drawRect(b, paint);
+            paint.setColor(Ui.RAIL);
+            c.drawRect(b.left + Ui.px(1), b.top + Ui.px(1), b.right - Ui.px(1), b.bottom - Ui.px(1), paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {}
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter filter) {}
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public int getOpacity() {
+            return android.graphics.PixelFormat.OPAQUE;
         }
     }
 

@@ -77,6 +77,7 @@ renumbered when the ports started sharing one version).
 | `opt.react` | Like or dislike (Suggest More/Fewer); OK again takes it back | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.more_from` | More from the publisher / More on a topic, as a new rail section | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.related` | Related stories | ✅ | ✅ 0.4.0 | ✅ |  |
+| `opt.more_menu` | "More stories like this ›" opens a pop-up in the middle with the More from / More on / Related choices, each with its story count; every list (with its first pictures and openings) fetched as Options opens, so a pick shows at once | ✅ | ✅ | ✅ | TV: Up/Down, OK or Right, Back or Left closes. Phone: tap a row, tap beside it closes. Windows: click or Enter, Esc/Left/click beside closes |
 | `opt.text_size` | Text size slider, ten steps, 14–40 pt | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.theme` | Dark mode: automatic, dark, light | ✅ | ✅ 0.4.0 | ✅ |  |
 | `theme.sun` | Automatic turns light at sunrise, dark at sunset, from the time zone (USNO equation) | ✅ | ✅ 0.4.0 | ✅ | Cases: `spec/cases/sun.json`. Windows keys places by Windows zone ids |
@@ -119,4 +120,5 @@ renumbered when the ports started sharing one version).
 | `win.mouse` | Hover focuses a card, click opens it; mouse back button | — | — | ✅ | D-pad only on the TV. Phone: touch |
 | `win.wheel` | Browser-like wheel; precision touchpads track 1:1; in Options it only scrolls (click cycles a setting) | — | — | ✅ | D-pad only on the TV. Phone: touch |
 | `win.icon_buttons` | ← back in the reader, ☰ for Options | — | ✅ 0.4.0 | ✅ | The remote has Back and Menu keys. Phone: ← and ☰ in the reader's top bar, ☰ by the masthead |
+| `win.refresh_stepper` | Refresh now: ‹ how often › buttons on the tile (25 min / Hourly / Off), clickable, ◀ ▶ too; a click elsewhere refreshes | — | — | ✅ | The TV steps it with ◀ ▶. Phone: the sheet's ‹ › do this already (`phone.sheet`) |
 | `win.keys` | F5 refresh, F11 / Alt+Enter full screen | — | — | ✅ | No such keys on the remote. Phone: no such keys |

@@ -68,8 +68,9 @@ your network by itself.
   - **Mark as unread** (or as read): a story read on the TV stops being dimmed or hidden.
   - **Like or dislike**: Apple News's *Suggest More / Fewer Stories Like This*. OK on the same one
     takes it back.
-  - **More from** the publisher, **More on** one of the story's topics, or **Related stories**,
-    as a new section at the top of the rail. The Mac loads more of the channel in the background.
+  - **More stories like this ›** opens a pop-up with **More from** the publisher, **More on** one
+    of the story's topics and **Related stories** (each fetched as Options opens), and shows the
+    one you pick as a new section at the top of the rail. The Mac loads more of the channel in the background.
   - **Text size** on a slider of ten steps, from 14 pt for close reading to 40 pt for across the
     room (the column widens for the big sizes), **Dark mode** (automatic, dark, light), **Stories you've read**
     (do nothing, dim after reading or hide after reading), **Continue reading** the last unfinished story, **Refresh now** and

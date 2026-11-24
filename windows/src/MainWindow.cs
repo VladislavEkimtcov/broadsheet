@@ -64,10 +64,18 @@ namespace Broadsheet
         Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, webTile;
         string keptUnread;
         Story reading;
+        /// <summary>More stories like this: {title, path, kind, id} per choice, for the story in Options.</summary>
         readonly List<string[]> moreChoices = new List<string[]>();
-        int moreIndex;
-        bool saveBusy, reactBusy, moreBusy;
-        string saveError, reactError, moreError;
+        /// <summary>Each choice's stories, fetched as soon as Options opens (path → list, when, error).</summary>
+        readonly Dictionary<string, List<Story>> moreLists = new Dictionary<string, List<Story>>();
+        readonly Dictionary<string, long> moreAt = new Dictionary<string, long>();
+        readonly Dictionary<string, string> moreErrors = new Dictionary<string, string>();
+        readonly HashSet<string> moreLoading = new HashSet<string>();
+        /// <summary>The choice picked before its stories were in: opens when they are.</summary>
+        string[] moreWanted;
+        List<Options.Tile> moreRows;
+        bool saveBusy, reactBusy;
+        string saveError, reactError;
 
         readonly DispatcherTimer retry, themeTick, prefetchTimer, periodic, reloadSoon;
         Story focusedStory;
@@ -1019,11 +1027,9 @@ namespace Broadsheet
 
         void OpenOptions(Story s, bool slide)
         {
-            if (s != target)
-            {
-                saveError = reactError = moreError = null;
-                moreIndex = 0;
-            }
+            if (s != target) saveError = reactError = null;
+            moreWanted = null;
+            moreRows = null;
             target = s;
             moreChoices.Clear();
             if (s != null)
@@ -1036,7 +1042,7 @@ namespace Broadsheet
                         moreChoices.Add(new[] { "More on " + t[1], "/v1/topics/" + t[0] + "/articles?limit=45", "topics", t[0] });
                 moreChoices.Add(new[] { "Related stories", "/v1/articles/" + s.Id + "/related", null, null });  // feature: opt.related
             }
-            moreIndex = Math.Min(moreIndex, Math.Max(0, moreChoices.Count - 1));
+            foreach (string[] c in moreChoices) PreloadMore(c);
 
             saveTile = new Options.Tile("☆", "Save story on Mac") { OnOk = ToggleSave };  // feature: opt.save
             reactTile = new Options.Tile("♥", "Like or dislike")  // feature: opt.react
@@ -1049,16 +1055,7 @@ namespace Broadsheet
             string r = s == null ? null : library.Reaction(s.Id);
             reactTile.Segment = r == "dislike" ? 1 : 0;
             unreadTile = new Options.Tile("○", "Mark as unread") { OnOk = ToggleRead };  // feature: opt.unread
-            moreTile = new Options.Tile("≡", "More like this")
-            {
-                OnStep = d =>
-                {
-                    moreIndex = Math.Max(0, Math.Min(moreChoices.Count - 1, moreIndex + d));
-                    moreError = null;
-                    FillOptions();
-                },
-                OnOk = OpenMore
-            };
+            moreTile = new Options.Tile("≡", "More stories like this") { OnOk = OpenMoreMenu, Opens = true };
             sizeTile = new Options.Tile("Aa", "Text size")  // feature: opt.text_size
             {
                 Slider = Reader.SIZES.Length,
@@ -1119,6 +1116,7 @@ namespace Broadsheet
             }
             refreshTile = new Options.Tile("↻", "Refresh now")  // feature: opt.refresh
             {
+                Stepper = true,
                 OnOk = () => { RefreshNow(); Load(); },
                 OnStep = d =>
                 {
@@ -1224,11 +1222,8 @@ namespace Broadsheet
             unreadTile.Hint = !has ? pick : null;
 
             moreTile.Enabled = has && moreChoices.Count > 0;
-            string[] choice = moreTile.Enabled ? moreChoices[moreIndex] : null;
-            moreTile.Label = choice != null ? choice[0] : "More like this";
-            moreTile.Value = moreChoices.Count > 1 ? (moreIndex + 1) + " of " + moreChoices.Count : "";
-            moreTile.Hint = !has ? pick : moreBusy ? "Loading…" : moreError ?? (moreChoices.Count > 1
-                ? "◀ ▶ more choices  ·  Enter to show" : "Enter to show");
+            moreTile.Hint = !has ? pick : null;
+            FillMoreRows();
 
             int step = reader.SizeStep;
             sizeTile.Position = step;
@@ -1250,8 +1245,9 @@ namespace Broadsheet
                 continueTile.Hint = u != null ? u.Title : "";
             }
 
-            refreshTile.Value = loadedAt > 0 ? "Updated " + Dates.Time(loadedAt) : "";
-            refreshTile.Hint = refreshing ? "Refreshing Apple News on the Mac…" : "Automatically " + AUTO_REFRESH_NAMES[AutoRefreshStep] + "  ·  ◀ ▶";
+            // ‹ how often › beside the label, like the phone; a click elsewhere refreshes now.
+            refreshTile.Value = new[] { "25 min", "Hourly", "Off" }[AutoRefreshStep];
+            refreshTile.Hint = refreshing ? "Refreshing Apple News on the Mac…" : loadedAt > 0 ? "Updated " + Dates.Time(loadedAt) : null;
         }
 
         /// <summary>Read here or new again: what dims (or hides) it on the front page.</summary>
@@ -1324,34 +1320,115 @@ namespace Broadsheet
             });
         }
 
-        void OpenMore()
+        // ------------------------------------------------------------------ more stories like this
+
+        /// <summary>Fetches a choice's stories ahead (once every ten minutes), with their pictures and
+        /// the first openings, so picking it in the pop-up shows the section at once.</summary>
+        void PreloadMore(string[] c)  // feature: opt.more_menu
         {
-            if (moreChoices.Count == 0 || moreBusy) return;
-            string[] c = moreChoices[moreIndex];
-            moreBusy = true;
-            moreError = null;
-            FillOptions();
+            long at;
+            if (moreLoading.Contains(c[1]) || (moreAt.TryGetValue(c[1], out at) && Dates.NowMs() - at < 10 * 60000L)) return;
+            moreLoading.Add(c[1]);
+            moreErrors.Remove(c[1]);
             relay.Stories(c[1], (list, error) =>
             {
-                moreBusy = false;
+                moreLoading.Remove(c[1]);
                 if (list == null || list.Count == 0)
                 {
-                    moreError = list == null ? error : "Nothing in the archive yet";
-                    FillOptions();
-                    return;
+                    moreErrors[c[1]] = list == null ? error : "Nothing in the archive yet";
+                    if (moreWanted != null && moreWanted[1] == c[1]) moreWanted = null;
                 }
-                ShowExtra(new Section("more", c[0], list), true);
-                if (c[2] == null) return;
-                // Ask News on the Mac for more of the channel or topic; show them when they're in.
-                relay.RefreshTag(c[2], c[3], (job, e) =>
+                else
                 {
-                    if (job == null) return;
-                    relay.Job(job, 40, (state, e2) => relay.Stories(c[1], (more, e3) =>
+                    moreLists[c[1]] = list;
+                    moreAt[c[1]] = Dates.NowMs();
+                    WarmMore(list);
+                    if (moreWanted != null && moreWanted[1] == c[1] && options.IsOpen)
                     {
-                        if (more != null && extra != null && extra.Title == c[0] && more.Count > extra.Stories.Count)
-                            ShowExtra(new Section("more", c[0], more), false);
-                    }));
-                });
+                        OpenMore(moreWanted);
+                        return;
+                    }
+                }
+                FillOptions();
+            });
+        }
+
+        /// <summary>The pictures the section's first cards draw, and the first three openings.</summary>
+        void WarmMore(List<Story> list)
+        {
+            int[] hero = front.HeroPixels;
+            int tile = front.TilePixels;
+            bool heroed = list.Count >= 3;
+            List<string> urls = new List<string>();
+            for (int k = 0; k < Math.Min(8, list.Count); k++)
+            {
+                if (heroed && (k == 1 || k == 2)) continue; // briefs have no picture
+                urls.Add(list[k].ImageFor(heroed && k == 0 ? hero[0] : tile));
+            }
+            images.Warm(urls);
+            for (int k = 0; k < Math.Min(3, list.Count); k++) PullHeadIfThere(list[k]);
+        }
+
+        void OpenMoreMenu()
+        {
+            if (moreChoices.Count == 0) return;
+            moreRows = new List<Options.Tile>();
+            foreach (string[] c in moreChoices)
+            {
+                string[] choice = c;
+                moreRows.Add(new Options.Tile(null, c[0]) { OnOk = () => OpenMore(choice) });
+            }
+            FillMoreRows();
+            options.OpenPopup("More stories like this", moreRows);
+        }
+
+        /// <summary>Each row: how many stories are in, or that they're on their way, or what went wrong.</summary>
+        void FillMoreRows()
+        {
+            if (moreRows == null) return;
+            for (int i = 0; i < moreRows.Count && i < moreChoices.Count; i++)
+            {
+                string[] c = moreChoices[i];
+                Options.Tile t = moreRows[i];
+                List<Story> list;
+                bool have = moreLists.TryGetValue(c[1], out list);
+                bool wanted = moreWanted != null && moreWanted[1] == c[1];
+                t.Value = wanted ? "Loading…" : have ? list.Count + (list.Count == 1 ? " story" : " stories")
+                    : moreLoading.Contains(c[1]) ? "…" : "";
+                string err;
+                t.Hint = !have && moreErrors.TryGetValue(c[1], out err) ? err : null;
+            }
+        }
+
+        void OpenMore(string[] c)
+        {
+            List<Story> list;
+            if (!moreLists.TryGetValue(c[1], out list))
+            {
+                // Not in yet (or it failed): ask now, and open it when it comes.
+                moreWanted = c;
+                moreAt.Remove(c[1]);
+                PreloadMore(c);
+                FillOptions();
+                return;
+            }
+            moreWanted = null;
+            ShowExtra(new Section("more", c[0], new List<Story>(list)), true);
+            if (c[2] == null) return;
+            // Ask News on the Mac for more of the channel or topic; show them when they're in.
+            relay.RefreshTag(c[2], c[3], (job, e) =>
+            {
+                if (job == null) return;
+                relay.Job(job, 40, (state, e2) => relay.Stories(c[1], (more, e3) =>
+                {
+                    if (more != null && more.Count > 0)
+                    {
+                        moreLists[c[1]] = more;
+                        moreAt[c[1]] = Dates.NowMs();
+                    }
+                    if (more != null && extra != null && extra.Title == c[0] && more.Count > extra.Stories.Count)
+                        ShowExtra(new Section("more", c[0], more), false);
+                }));
             });
         }
 

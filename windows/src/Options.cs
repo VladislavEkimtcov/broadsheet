@@ -11,7 +11,7 @@ namespace Broadsheet
     /// <summary>The few icons with no plain glyph, as paths on a 24-unit grid: thumbs and a laptop.</summary>
     static class Icons
     {
-        public const int THUMB_UP = 1, THUMB_DOWN = 2, LAPTOP = 3, BACK = 4, MENU = 5;
+        public const int THUMB_UP = 1, THUMB_DOWN = 2, LAPTOP = 3, BACK = 4, MENU = 5, LEFT = 6, RIGHT = 7;
 
         static readonly Geometry THUMB = Geometry.Parse(
             "M2,10 L6,10 L6,21 L2,21 Z M8,10 L11.6,3.2 Q12.3,2 13.6,2.4 Q15,3 14.7,4.6 L13.9,9 L19.5,9 Q22,9 21.6,11.6 L20.2,19.2 Q19.8,21 18,21 L8,21 Z");
@@ -47,6 +47,19 @@ namespace Broadsheet
                 dc.DrawRectangle(b, null, new Rect(3, 5, 18, 2.2));
                 dc.DrawRectangle(b, null, new Rect(3, 11, 18, 2.2));
                 dc.DrawRectangle(b, null, new Rect(3, 17, 18, 2.2));
+            }
+            else if (which == LEFT || which == RIGHT)
+            {
+                Pen pen = new Pen(Ui.Brush(color), 2.25) { StartLineCap = PenLineCap.Square, EndLineCap = PenLineCap.Square, LineJoin = PenLineJoin.Miter };
+                double tip = which == LEFT ? 8.5 : 15.5, back = which == LEFT ? 15 : 9;
+                StreamGeometry g = new StreamGeometry();
+                using (StreamGeometryContext c = g.Open())
+                {
+                    c.BeginFigure(new Point(back, 5.5), false, false);
+                    c.LineTo(new Point(tip, 12), true, false);
+                    c.LineTo(new Point(back, 18.5), true, false);
+                }
+                dc.DrawGeometry(null, pen, g);
             }
             else if (which == LAPTOP)
             {
@@ -113,6 +126,8 @@ namespace Broadsheet
     /// leaves with Menu or Esc. A column of tiles, modelled on dumbtv's quick settings: Up/Down picks
     /// a tile, Left/Right changes its value, Enter does it; the mouse clicks the same things. The
     /// panel keeps the selection itself, so focus on the page behind stays where it was.
+    /// A tile can open a pop-up in the middle of the window, a short list of its own tiles (More
+    /// stories like this): Up/Down and Enter or a click there; Esc, Left or a click beside it closes it.
     /// </summary>
     sealed class Options : Grid  // feature: opt.panel
     {
@@ -138,6 +153,10 @@ namespace Broadsheet
             public Action OnOk;
             /// <summary>What a click does on a tile of settings: the next value, round to the first after the last.</summary>
             public Action OnCycle;
+            /// <summary>Enter opens a pop-up (a drawn › at the edge says so); Right opens it too.</summary>
+            public bool Opens;
+            /// <summary>‹ value › buttons on the right: a click on them steps, anywhere else is OK.</summary>
+            public bool Stepper;
 
             public Tile(string icon, string label)
             {
@@ -158,6 +177,14 @@ namespace Broadsheet
         readonly List<TileView> views = new List<TileView>();
         int selected;
         bool open, touched;
+        readonly Border popupShade, popup;
+        readonly TextBlock popupHeading;
+        readonly StackPanel popupColumn = new StackPanel();
+        readonly Scroller popupScroll = new Scroller();
+        readonly List<Tile> popupTiles = new List<Tile>();
+        readonly List<TileView> popupViews = new List<TileView>();
+        int popupSelected;
+        bool popupOpen;
 
         public Options(IListener listener)
         {
@@ -196,6 +223,64 @@ namespace Broadsheet
             };
             panel.MouseLeftButtonUp += (s, e) => e.Handled = true;
             Children.Add(panel);
+
+            // feature: opt.more_menu
+            popupShade = new Border { Background = Ui.Brush(Ui.Argb(0x59000000)), Visibility = Visibility.Collapsed };
+            popupShade.MouseLeftButtonUp += (s, e) => { ClosePopup(); e.Handled = true; };
+            Children.Add(popupShade);
+            DockPanel pinner = new DockPanel();
+            popupHeading = new TextBlock { FontFamily = Ui.Display, FontSize = 22, Foreground = Ui.Brush(Ui.INK), Margin = new Thickness(0, 0, 0, 14) };
+            DockPanel.SetDock(popupHeading, Dock.Top);
+            pinner.Children.Add(popupHeading);
+            popupScroll.Content = popupColumn;
+            pinner.Children.Add(popupScroll);
+            popup = new Border
+            {
+                Width = 560, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                Background = Ui.Brush(Ui.RAIL), BorderBrush = Ui.Brush(Ui.RULE), BorderThickness = new Thickness(1),
+                Padding = new Thickness(22, 20, 22, 22), Child = pinner, Visibility = Visibility.Collapsed
+            };
+            popup.MouseLeftButtonUp += (s, e) => e.Handled = true;
+            Children.Add(popup);
+        }
+
+        /// <summary>Opens the pop-up over the panel with these rows; Enter (or a click) on a row runs its OnOk.</summary>
+        public void OpenPopup(string title, List<Tile> rows)
+        {
+            popupTiles.Clear();
+            popupTiles.AddRange(rows);
+            popupViews.Clear();
+            popupColumn.Children.Clear();
+            for (int i = 0; i < popupTiles.Count; i++)
+            {
+                TileView v = new TileView(this, popupTiles[i]) { Margin = new Thickness(0, i > 0 ? 4 : 0, 0, 0) };
+                popupViews.Add(v);
+                popupColumn.Children.Add(v);
+            }
+            popupSelected = 0;
+            popupHeading.Text = title;
+            popup.MaxHeight = Math.Max(200, ActualHeight * 0.8);
+            popupOpen = true;
+            popupShade.Visibility = Visibility.Visible;
+            popup.Visibility = Visibility.Visible;
+            Duration d = new Duration(TimeSpan.FromMilliseconds(120));
+            popupShade.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, d));
+            popup.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, d));
+            popupScroll.ScrollTo(0, false);
+            Refresh();
+        }
+
+        public bool IsPopupOpen { get { return popupOpen; } }
+
+        public void ClosePopup()
+        {
+            if (!popupOpen) return;
+            popupOpen = false;
+            popupShade.BeginAnimation(OpacityProperty, null);
+            popup.BeginAnimation(OpacityProperty, null);
+            popupShade.Visibility = Visibility.Collapsed;
+            popup.Visibility = Visibility.Collapsed;
+            Refresh();
         }
 
         public bool IsOpen { get { return open; } }
@@ -205,6 +290,7 @@ namespace Broadsheet
         /// <summary>Opens with these tiles; selects the first that can do something. animate: slide in.</summary>
         public void Open(List<Tile> list, string about, bool animate)
         {
+            ClosePopup();
             tiles.Clear();
             tiles.AddRange(list);
             views.Clear();
@@ -277,6 +363,7 @@ namespace Broadsheet
         public void Close()
         {
             if (!open) return;
+            ClosePopup();
             open = false;
             Duration d = new Duration(TimeSpan.FromMilliseconds(150));
             slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(WIDTH, d));
@@ -291,7 +378,63 @@ namespace Broadsheet
         /// <summary>Redraws the tiles after their state changed.</summary>
         public void Refresh()
         {
-            for (int i = 0; i < views.Count; i++) views[i].Bind(i == selected);
+            for (int i = 0; i < views.Count; i++) views[i].Bind(i == selected && !popupOpen);
+            for (int i = 0; i < popupViews.Count; i++) popupViews[i].Bind(i == popupSelected);
+        }
+
+        void RevealPopup()
+        {
+            if (popupSelected < 0 || popupSelected >= popupViews.Count) return;
+            TileView v = popupViews[popupSelected];
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!v.IsLoaded) return;
+                double y = v.TranslatePoint(new Point(0, 0), popupColumn).Y;
+                double top = y - 16, bottom = y + v.ActualHeight + 16;
+                if (top < popupScroll.Target) popupScroll.ScrollTo(top, true);
+                else if (bottom > popupScroll.Target + popupScroll.ViewportHeight) popupScroll.ScrollTo(bottom - popupScroll.ViewportHeight, true);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        /// <summary>Keys while the pop-up is open: it takes them all.</summary>
+        bool OnPopupKey(Key k, bool repeat)
+        {
+            Tile t = popupSelected >= 0 && popupSelected < popupTiles.Count ? popupTiles[popupSelected] : null;
+            switch (k)
+            {
+                case Key.Apps:
+                case Key.M:
+                    if (!repeat) Close();
+                    return true;
+                case Key.Escape:
+                case Key.Back:
+                case Key.BrowserBack:
+                case Key.Left:
+                    if (!repeat) ClosePopup();
+                    return true;
+                case Key.Up:
+                    if (popupSelected > 0) popupSelected--;
+                    break;
+                case Key.Down:
+                    if (popupSelected < popupTiles.Count - 1) popupSelected++;
+                    break;
+                case Key.Home:
+                    popupSelected = 0;
+                    break;
+                case Key.End:
+                    popupSelected = popupTiles.Count - 1;
+                    break;
+                case Key.Enter:
+                case Key.Space:
+                case Key.Right:
+                    if (!repeat) Ok(t);
+                    break;
+                default:
+                    return true;
+            }
+            Refresh();
+            RevealPopup();
+            return true;
         }
 
         void Reveal()
@@ -312,6 +455,7 @@ namespace Broadsheet
         public bool OnKey(Key k, bool repeat)
         {
             touched = true;
+            if (popupOpen) return OnPopupKey(k, repeat);
             Tile t = selected < tiles.Count ? tiles[selected] : null;
             switch (k)
             {
@@ -336,7 +480,8 @@ namespace Broadsheet
                     break;
                 case Key.Left:
                 case Key.Right:
-                    Step(t, k == Key.Left ? -1 : 1);
+                    if (t != null && t.Opens && k == Key.Right) { if (!repeat) Ok(t); }
+                    else Step(t, k == Key.Left ? -1 : 1);
                     break;
                 case Key.Enter:
                 case Key.Space:
@@ -366,6 +511,14 @@ namespace Broadsheet
         void Clicked(TileView v, Point p)
         {
             touched = true;
+            int pi = popupViews.IndexOf(v);
+            if (pi >= 0)
+            {
+                popupSelected = pi;
+                Refresh();
+                Ok(popupTiles[pi]);
+                return;
+            }
             int i = views.IndexOf(v);
             if (i < 0) return;
             selected = i;
@@ -376,6 +529,11 @@ namespace Broadsheet
                 t.Segment = seg;
                 Refresh();
                 Ok(t);
+            }
+            else if (t.Stepper && t.OnStep != null && v.StepLeft >= 0 && p.Y >= v.StepTop - 4 && p.Y <= v.StepTop + STEP + 4
+                && ((p.X >= v.StepLeft - 4 && p.X <= v.StepLeft + STEP + 4) || p.X >= v.StepRight - 4))
+            {
+                Step(t, p.X <= v.StepLeft + STEP + 4 ? -1 : 1);  // feature: win.refresh_stepper
             }
             else if (t.Slider > 0 && t.OnStep != null)
             {
@@ -407,11 +565,16 @@ namespace Broadsheet
         }
 
         /// <summary>A tile, drawn by hand: icon, label and value on top, a hint or the choices below.</summary>
+        /// <summary>The side of a ‹ or › button.</summary>
+        const double STEP = 28;
+
         sealed class TileView : FrameworkElement
         {
             readonly Options owner;
             readonly Tile tile;
             bool on, hover;
+            /// <summary>Where the ‹ and › buttons were drawn (Stepper tiles), or -1.</summary>
+            public double StepLeft = -1, StepRight = -1, StepTop;
 
             public TileView(Options owner, Tile tile)
             {
@@ -474,8 +637,34 @@ namespace Broadsheet
                 double right = w - pad;
                 string v = tile.Value ?? "";
                 FormattedText val = Ui.Format(v, Ui.SansMedium, 16, Ui.Alpha(on ? Ui.INK : Ui.MUTED, a));
-                dc.DrawText(val, new Point(right - val.Width, top));
-                string l = Ui.Ellipsize(tile.Label, Ui.SansMedium, 17, right - val.Width - 12 - x);
+                double taken = val.Width;
+                StepLeft = StepRight = -1;
+                if (tile.Stepper)
+                {
+                    // ‹ value › : square buttons, the value between them.
+                    StepTop = top + 11 - STEP / 2;
+                    StepRight = right - STEP;
+                    Brush btn = Ui.Brush(Ui.Alpha(Ui.INK, tile.Enabled ? 0.08 : 0.04));
+                    dc.DrawRectangle(btn, null, new Rect(StepRight, StepTop, STEP, STEP));
+                    Icons.Draw(dc, Icons.RIGHT, StepRight + 4, StepTop + 4, 20, fg);
+                    double vx = StepRight - 10 - val.Width;
+                    dc.DrawText(val, new Point(vx, top));
+                    StepLeft = vx - 10 - STEP;
+                    dc.DrawRectangle(btn, null, new Rect(StepLeft, StepTop, STEP, STEP));
+                    Icons.Draw(dc, Icons.LEFT, StepLeft + 4, StepTop + 4, 20, fg);
+                    taken = right - StepLeft;
+                }
+                else if (tile.Opens)
+                {
+                    // A drawn › at the edge: this one opens a pop-up.
+                    Icons.Draw(dc, Icons.RIGHT, right - 20, top - 1, 24, fg);
+                    taken = 24;
+                }
+                else
+                {
+                    dc.DrawText(val, new Point(right - val.Width, top));
+                }
+                string l = Ui.Ellipsize(tile.Label, Ui.SansMedium, 17, right - taken - 12 - x);
                 dc.DrawText(Ui.Format(l, Ui.SansMedium, 17, fg), new Point(x, top - 1));
                 Color hintColor = Ui.Alpha(Ui.MUTED, a);
                 if (tile.Slider > 0)

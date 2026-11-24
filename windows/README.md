@@ -42,7 +42,8 @@ release zip) or from `bin\`.
   The mouse's back button also works.
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
-  zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". The wheel
+  zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". More stories like this › opens a pop-up
+  of choices; Refresh now has ‹ › buttons for how often. The wheel
   always scrolls the panel and never changes a setting: ◀ ▶ do that, a click on the text size
   track moves the knob there, and a click on Dark mode or Stories you've read goes to the next
   value (round to the first after the last).

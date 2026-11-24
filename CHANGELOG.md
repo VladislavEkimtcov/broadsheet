@@ -7,6 +7,11 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- More on …, all ports: Apple News's own bookkeeping tags no longer show up as topics ("More on
+  Internal: Spinach", "More on Qualitative: Business, short shelf life", "LLM Politics", "NewsS",
+  "… EdOps"). In 54 stories on the relay, "Internal: Spinach" was on 35 of them.
+- Phone: Stories you've read has its ‹ › side by side; they had an empty gap between them where
+  the value used to be.
 - Windows: the masthead, section titles, the Options heading and the reader's headline are in
   Newsreader Display again, as on the TV and phone. That cut names its family "Newsreader
   72pt", so asking for "Newsreader" quietly fell back to Segoe UI; each font is now asked for by

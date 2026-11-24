@@ -150,6 +150,16 @@ namespace Broadsheet
         public readonly List<Block> Blocks = new List<Block>();
         /// <summary>The story's topics as {id, name}, for "More on …".</summary>
         public readonly List<string[]> Topics = new List<string[]>();
+
+        /// <summary>Whether a topic is one a reader would know. Apple News tags stories with its own
+        /// bookkeeping too ("Internal: Spinach", "Qualitative: High character count", "LLM Politics",
+        /// "Car Tech EdOps", "NewsS"); those never become a "More on …".</summary>
+        public static bool Reader(string name)  // feature: opt.more_from
+        {
+            if (name == null || name.Trim().Length == 0) return false;
+            return !name.StartsWith("Internal:", StringComparison.Ordinal) && !name.StartsWith("Qualitative:", StringComparison.Ordinal)
+                && !name.StartsWith("LLM ", StringComparison.Ordinal) && !name.EndsWith("EdOps", StringComparison.Ordinal) && name != "NewsS";
+        }
         /// <summary>Where the rest of the story starts, when only its opening came; -1 when it's whole.
         /// Moves on as the rest is added (Reader.AppendBlocks).</summary>
         public int NextBlock;
@@ -182,7 +192,7 @@ namespace Broadsheet
                 foreach (object x in t)
                 {
                     JObj o = x as JObj;
-                    if (o != null && o.Str("id") != null && o.Str("name") != null) Topics.Add(new[] { o.Str("id"), o.Str("name") });
+                    if (o != null && o.Str("id") != null && Reader(o.Str("name"))) Topics.Add(new[] { o.Str("id"), o.Str("name") });
                 }
             }
             List<object> a = body == null ? null : body.Arr("blocks");

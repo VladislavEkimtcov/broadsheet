@@ -43,6 +43,17 @@ final class Article {
     final String reaction;
     /** The story's topics as {id, name}, for "More on …". */
     final List<String[]> topics = new ArrayList<>();
+
+    /**
+     * Whether a topic is one a reader would know. Apple News tags stories with its own
+     * bookkeeping too ("Internal: Spinach", "Qualitative: High character count",
+     * "LLM Politics", "Car Tech EdOps", "NewsS"); those never become a "More on …".
+     */
+    static boolean reader(String name) {  // feature: opt.more_from
+        if (name == null || name.trim().isEmpty()) return false;
+        return !name.startsWith("Internal:") && !name.startsWith("Qualitative:") && !name.startsWith("LLM ")
+                && !name.endsWith("EdOps") && !name.equals("NewsS");
+    }
     /** Where the rest of the story starts, when only its opening came; -1 when it's whole.
      *  Moves on as the rest is added ({@link Reader#appendBlocks}). */
     int nextBlock;
@@ -72,7 +83,7 @@ final class Article {
         JSONArray t = data.optJSONArray("topics");
         for (int i = 0; t != null && i < t.length(); i++) {
             JSONObject o = t.optJSONObject(i);
-            if (o != null && Story.str(o, "id") != null && Story.str(o, "name") != null) {
+            if (o != null && Story.str(o, "id") != null && reader(Story.str(o, "name"))) {
                 topics.add(new String[] {o.optString("id"), o.optString("name")});
             }
         }

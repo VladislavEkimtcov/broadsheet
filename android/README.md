@@ -15,7 +15,7 @@ Apple News for Android phones and tablets (Android 7.1 or later), in the same ne
 
 | | | |
 |---|---|---|
-| ![Apple News front page in Broadsheet on an Android phone, light by day: masthead, a strip of sections, a hero story with its headline over the picture, and briefs](../docs/phone/front-light.jpg) | ![The reader on an Android phone: dateline, serif headline, standfirst and the lead picture under a bar with a back arrow and a menu](../docs/phone/reader.jpg) | ![The options sheet on an Android phone: save, like or dislike, mark as unread, more from the publisher, open in the browser and the text size slider](../docs/phone/options.jpg) |
+| ![Apple News front page in Broadsheet on an Android phone, light by day: masthead, a strip of sections, a hero story with its headline over the picture, and briefs](../docs/phone/front-light.jpg) | ![The reader on an Android phone: dateline, serif headline, standfirst and the lead picture under a bar with a back arrow and a menu](../docs/phone/reader.jpg) | ![The options sheet on an Android phone: Save story on Mac, Like or dislike, Mark as unread, More stories like this with a chevron, Open in the browser, the text size slider and Dark mode](../docs/phone/options.jpg) |
 
 - **Front page:** a masthead with ☰, the sections as a strip along the top that scrolls
   sideways (the chosen one lit, with the red bar at its foot), and the section in one column:
@@ -95,6 +95,8 @@ your network by itself.
 ![The options panel over the front page, light by day: Save story on Mac, Like or dislike with thumb icons, Mark as read, More stories like this with a chevron, the text size slider at 21 pt and Dark mode](../docs/tv/options.jpg)
 
 ![More stories like this: a pop-up in the middle of the screen with More from NBC News (45 stories) and Related stories (6 stories), already fetched](../docs/tv/more-like-this.jpg)
+
+![The same pop-up on a phone, over the Options sheet in the reader: More from NBC News, More on Industry News, Politicians and Politics (45 stories each) and Related stories (6)](../docs/phone/more-like-this.jpg)
 
 ![The same front page after sunset, in the dark theme](../docs/tv/front-page-dark.jpg)
 

@@ -52,7 +52,7 @@ refresh. Details and more screenshots: [android/README.md](android/README.md#on-
 
 | | |
 |---|---|
-| ![Apple News reader on an Android phone: a story's headline, standfirst and lead picture in Broadsheet's serif column](docs/phone/reader.jpg) | ![Broadsheet's options sheet on an Android phone: save the story, like or dislike, more from the publisher, text size](docs/phone/options.jpg) |
+| ![Apple News reader on an Android phone: a story's headline, standfirst and lead picture in Broadsheet's serif column](docs/phone/reader.jpg) | ![Broadsheet's options sheet on an Android phone: Save story on Mac, Like or dislike, Mark as unread, More stories like this, Open in the browser, text size and Dark mode](docs/phone/options.jpg) |
 
 ## Apple News on Windows
 

@@ -602,12 +602,13 @@ final class Options extends FrameLayout {  // feature: opt.panel
             c.drawText(v, right - vw, top, value);
             if (stepRight >= 0) {
                 float b = Ui.px(34), by = top - label.getTextSize() * 0.8f - Ui.px(8);
-                stepLeft = right - vw - Ui.px(10) - b;
+                // No value (the setting is named below): the two buttons sit side by side.
+                stepLeft = v.isEmpty() ? stepRight - Ui.px(6) - b : right - vw - Ui.px(10) - b;
                 fill.setColor(Ui.alpha(Ui.INK, tile.enabled ? 0.08f : 0.04f));
                 c.drawRect(stepLeft, by, stepLeft + b, by + b, fill);
                 fill.setColor(Ui.alpha(fg, a));
                 Icons.draw(c, Icons.LEFT, stepLeft + Ui.px(7), by + Ui.px(7), Ui.px(20), fill);
-                vw += b + Ui.px(10);
+                vw = right - stepLeft;
             }
             label.setColor(Ui.alpha(fg, a));
             String l = TextUtils.ellipsize(tile.label, label, right - vw - Ui.px(12) - x, TextUtils.TruncateAt.END).toString();

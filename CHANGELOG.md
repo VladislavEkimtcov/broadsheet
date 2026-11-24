@@ -7,6 +7,10 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Windows: the masthead, section titles, the Options heading and the reader's headline are in
+  Newsreader Display again, as on the TV and phone. That cut names its family "Newsreader
+  72pt", so asking for "Newsreader" quietly fell back to Segoe UI; each font is now asked for by
+  the name in its own file.
 - Options, all ports: **More stories like this ›** replaces the tile that stepped through More
   from / More on / Related. OK (or Right, a tap, a click) opens a pop-up in the middle of the
   screen with every choice and how many stories it has; Back, Left or a tap beside it closes it.

@@ -48,15 +48,35 @@ namespace Broadsheet
             SansBold = new Typeface(segoe, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         }
 
-        /// <summary>Newsreader (SIL OFL) from the exe's own resources; Georgia if a cut is missing.</summary>
+        /// <summary>Newsreader (SIL OFL) from the exe's own resources; Georgia if a cut is missing.
+        /// The family is asked for by the name the file itself gives: the display cut calls itself
+        /// "Newsreader 72pt", and a name that doesn't match falls back to Segoe UI without a word
+        /// (GetTypefaces still lists faces then, so only a resolved glyph typeface proves it).</summary>
         static FontFamily Font(string file)
         {
+            List<string> names = new List<string>();
+            GlyphTypeface own = null;
             try
             {
-                FontFamily f = new FontFamily(new Uri("pack://application:,,,/"), "./fonts/" + file + "#Newsreader");
-                if (f.GetTypefaces().Count > 0) return f;
+                own = new GlyphTypeface(new Uri("pack://application:,,,/fonts/" + file));
+                foreach (KeyValuePair<System.Globalization.CultureInfo, string> n in own.Win32FamilyNames)
+                    if (n.Key.Name == "en-US" && !names.Contains(n.Value)) names.Insert(0, n.Value);
+                    else if (!names.Contains(n.Value)) names.Add(n.Value);
             }
             catch (Exception) { }
+            if (!names.Contains("Newsreader")) names.Add("Newsreader");
+            foreach (string name in names)
+            {
+                try
+                {
+                    FontFamily f = new FontFamily(new Uri("pack://application:,,,/"), "./fonts/" + file + "#" + name);
+                    Typeface t = own != null ? new Typeface(f, own.Style, own.Weight, own.Stretch)
+                        : new Typeface(f, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+                    GlyphTypeface found;
+                    if (t.TryGetGlyphTypeface(out found)) return f;
+                }
+                catch (Exception) { }
+            }
             return new FontFamily("Georgia");
         }
 

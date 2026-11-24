@@ -60,7 +60,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     private static final String[] THEMES = {"auto", "dark", "light"};
     private static final String[] THEME_NAMES = {"Automatic", "Dark", "Light"};
     private static final String[] READ_MODES = {"show", "dim", "hide"};
-    private static final String[] READ_NAMES = {"Show", "Dim", "Hide"};
+    private static final String[] READ_NAMES = {"Do nothing", "Dim after reading", "Hide after reading"};
 
     private Relay relay;
     private Images images;
@@ -965,7 +965,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         }
         moreIndex = Math.min(moreIndex, Math.max(0, moreChoices.size() - 1));
 
-        saveTile = new Options.Tile("☆", "Save story");  // feature: opt.save
+        saveTile = new Options.Tile("☆", "Save story on Mac");  // feature: opt.save
         saveTile.onOk = this::toggleSave;
         reactTile = new Options.Tile("♥", "Like or dislike");  // feature: opt.react
         reactTile.segments = new String[] {"More like this", "Fewer like this"};
@@ -993,7 +993,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             if (reader.getVisibility() == View.VISIBLE) reader.relayout();
             fillOptions();
         };
-        themeTile = new Options.Tile("◐", "Appearance");  // feature: opt.theme
+        themeTile = new Options.Tile("◐", "Dark mode");  // feature: opt.theme
         themeTile.onStep = d -> {
             int i = Math.max(0, Math.min(THEMES.length - 1, indexOf(THEMES, themeMode()) + d));
             prefs.edit().putString("theme", THEMES[i]).apply();
@@ -1025,7 +1025,6 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             // A phone has a browser at hand: the publisher's own page, for links and embeds.
             final String link = s.link;
             webTile = new Options.Tile("↗", "Open in the browser");  // feature: win.browser
-            webTile.hint = "The publisher's page, with its links and embeds";
             webTile.onOk = () -> {
                 options.close();
                 try {
@@ -1109,10 +1108,9 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         saveTile.enabled = has && !saveBusy;
         boolean saved = has && isSaved(s);
         saveTile.icon = saved ? "★" : "☆";
-        saveTile.label = !has ? "Save story" : saveBusy ? (saved ? "Removing…" : "Saving…") : saved ? "Saved" : "Save story";
+        saveTile.label = saveBusy ? (saved ? "Removing…" : "Saving…") : saved ? "Unsave story on Mac" : "Save story on Mac";
         saveTile.value = saved && !saveBusy ? "✓" : "";
-        saveTile.hint = !has ? pick : saveBusy ? "Apple News on the Mac is doing it" : saveError != null ? saveError
-                : saved ? "In Saved Stories on the Mac  ·  " + ok + " takes it out" : ok + " puts it in Saved Stories on the Mac";
+        saveTile.hint = !has ? pick : saveError;
         if (saveBusy) saveTile.enabled = true;  // still selectable; OK waits
 
         String r = has ? library.reaction(s.id) : null;
@@ -1120,24 +1118,21 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         reactTile.checked[0] = "like".equals(r);
         reactTile.checked[1] = "dislike".equals(r);
         reactTile.value = reactBusy ? "Sending…" : "like".equals(r) ? "Liked" : "dislike".equals(r) ? "Disliked" : "";
-        reactTile.hint = !has ? pick : reactError != null ? reactError : r != null ? (Ui.touch ? "Tap it again to take it back" : "OK on it again takes it back")
-                : "Apple News suggests more or fewer like it";
+        reactTile.hint = !has ? pick : reactError;
 
         boolean read = has && library.isRead(s.id) && !s.id.equals(keptUnread);
         unreadTile.enabled = has;
         unreadTile.icon = read ? "○" : "●";
         unreadTile.label = read ? "Mark as unread" : "Mark as read";
-        unreadTile.hint = !has ? pick : read ? "Read on this " + Ui.device + "  ·  " + ok + " makes it new again"
-                : "dim".equals(readMode()) ? ok + " fades it on the front page" : "hide".equals(readMode())
-                ? ok + " hides it from the front page" : ok + " counts it as read";
+        unreadTile.hint = !has ? pick : null;
 
         moreTile.enabled = has && !moreChoices.isEmpty();
         String[] choice = moreTile.enabled ? moreChoices.get(moreIndex) : null;
         moreTile.label = choice != null ? choice[0] : "More like this";
         moreTile.value = moreChoices.size() > 1 ? (moreIndex + 1) + " of " + moreChoices.size() : "";
         moreTile.hint = !has ? pick : moreBusy ? "Loading…" : moreError != null ? moreError
-                : moreChoices.size() > 1 ? (Ui.touch ? "‹ › more choices  ·  Tap shows them" : "◀ ▶ more choices  ·  OK shows them")
-                : ok + " shows them";
+                : moreChoices.size() > 1 ? (Ui.touch ? "‹ › more choices  ·  Tap to show" : "◀ ▶ more choices  ·  OK to show")
+                : ok + " to show";
 
         int step = reader.sizeStep();
         sizeTile.position = step;
@@ -1149,10 +1144,8 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         themeTile.value = THEME_NAMES[indexOf(THEMES, themeMode())];
         themeTile.hint = "auto".equals(themeMode()) ? sunHint() : Ui.touch ? "Automatic follows sunset" : "◀ Automatic follows sunset";
 
-        readTile.value = READ_NAMES[indexOf(READ_MODES, readMode())];
-        int n = library.readCount();
-        readTile.hint = (n == 0 ? "None yet" : n + (n == 1 ? " story" : " stories") + " read on this " + Ui.device)
-                + (Ui.touch ? "" : "  ·  ◀ ▶");
+        readTile.value = "";
+        readTile.hint = READ_NAMES[indexOf(READ_MODES, readMode())] + (Ui.touch ? "" : "  ·  ◀ ▶");
 
         if (continueTile != null) {
             Story u = library.unfinished();

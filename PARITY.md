@@ -72,15 +72,15 @@ renumbered when the ports started sharing one version).
 |---|---|---|---|---|---|
 | `opt.panel` | Panel slides in from the right over the front page or a story | ✅ | ⚠️ 0.4.0 | ✅ | Phone: a sheet from the bottom, from ☰ or a long press on a card (`phone.sheet`) |
 | `opt.handoff` | On the Mac: carry on with the story open in Apple News on the Mac | ✅ | ✅ 0.4.0 | ✅ |  |
-| `opt.save` | Save story / take it out of Saved Stories on the Mac | ✅ | ✅ 0.4.0 | ✅ |  |
+| `opt.save` | Save story on Mac / Unsave story on Mac (Saved Stories) | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.unread` | Mark as unread / as read | ✅ 0.2.2 | ✅ 0.4.0 | ✅ 0.1.0 |  |
 | `opt.react` | Like or dislike (Suggest More/Fewer); OK again takes it back | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.more_from` | More from the publisher / More on a topic, as a new rail section | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.related` | Related stories | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.text_size` | Text size slider, ten steps, 14–40 pt | ✅ | ✅ 0.4.0 | ✅ |  |
-| `opt.theme` | Appearance: automatic, dark, light | ✅ | ✅ 0.4.0 | ✅ |  |
+| `opt.theme` | Dark mode: automatic, dark, light | ✅ | ✅ 0.4.0 | ✅ |  |
 | `theme.sun` | Automatic turns light at sunrise, dark at sunset, from the time zone (USNO equation) | ✅ | ✅ 0.4.0 | ✅ | Cases: `spec/cases/sun.json`. Windows keys places by Windows zone ids |
-| `opt.read_mode` | Stories you've read: show, dim or hide | ✅ | ✅ 0.4.0 | ✅ |  |
+| `opt.read_mode` | Stories you've read: do nothing, dim or hide after reading | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.continue` | Continue reading the last unfinished story | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.refresh` | Refresh now | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.auto_refresh` | Refresh by itself every 25 min / hour / off | ✅ | ✅ 0.4.0 | ✅ |  |

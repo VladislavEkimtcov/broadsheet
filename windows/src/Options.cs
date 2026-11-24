@@ -437,7 +437,8 @@ namespace Broadsheet
 
             protected override void OnMouseWheel(MouseWheelEventArgs e)
             {
-                if (tile.Slider > 0 || tile.Segments != null || (tile.OnStep != null && tile.OnOk == null))
+                // Not the text size slider: the wheel over it scrolls the pane, like anywhere else.
+                if (tile.Slider == 0 && (tile.Segments != null || (tile.OnStep != null && tile.OnOk == null)))
                 {
                     owner.Clicked(this, e.GetPosition(this), true, e.Delta > 0 ? 1 : -1);
                     e.Handled = true;

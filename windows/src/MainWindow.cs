@@ -35,7 +35,7 @@ namespace Broadsheet
         static readonly string[] THEMES = { "auto", "dark", "light" };
         static readonly string[] THEME_NAMES = { "Automatic", "Dark", "Light" };
         static readonly string[] READ_MODES = { "show", "dim", "hide" };
-        static readonly string[] READ_NAMES = { "Show", "Dim", "Hide" };
+        static readonly string[] READ_NAMES = { "Do nothing", "Dim after reading", "Hide after reading" };
 
         readonly Prefs prefs = new Prefs();
         readonly Relay relay;
@@ -1038,7 +1038,7 @@ namespace Broadsheet
             }
             moreIndex = Math.Min(moreIndex, Math.Max(0, moreChoices.Count - 1));
 
-            saveTile = new Options.Tile("☆", "Save story") { OnOk = ToggleSave };  // feature: opt.save
+            saveTile = new Options.Tile("☆", "Save story on Mac") { OnOk = ToggleSave };  // feature: opt.save
             reactTile = new Options.Tile("♥", "Like or dislike")  // feature: opt.react
             {
                 Segments = new[] { "More like this", "Fewer like this" },
@@ -1072,7 +1072,7 @@ namespace Broadsheet
                     FillOptions();
                 }
             };
-            themeTile = new Options.Tile("◐", "Appearance")  // feature: opt.theme
+            themeTile = new Options.Tile("◐", "Dark mode")  // feature: opt.theme
             {
                 OnStep = d =>
                 {
@@ -1194,34 +1194,29 @@ namespace Broadsheet
             bool saved = has && IsSaved(s);
             saveTile.Enabled = has;
             saveTile.Icon = saved ? "★" : "☆";
-            saveTile.Label = !has ? "Save story" : saveBusy ? (saved ? "Removing…" : "Saving…") : saved ? "Saved" : "Save story";
+            saveTile.Label = saveBusy ? (saved ? "Removing…" : "Saving…") : saved ? "Unsave story on Mac" : "Save story on Mac";
             saveTile.Value = saved && !saveBusy ? "✓" : "";
-            saveTile.Hint = !has ? pick : saveBusy ? "Apple News on the Mac is doing it" : saveError ?? (saved
-                ? "In Saved Stories on the Mac  ·  Enter takes it out" : "Enter puts it in Saved Stories on the Mac");
+            saveTile.Hint = !has ? pick : saveError;
 
             string r = has ? library.Reaction(s.Id) : null;
             reactTile.Enabled = has;
             reactTile.Checked[0] = r == "like";
             reactTile.Checked[1] = r == "dislike";
             reactTile.Value = reactBusy ? "Sending…" : r == "like" ? "Liked" : r == "dislike" ? "Disliked" : "";
-            reactTile.Hint = !has ? pick : reactError ?? (r != null ? "Enter on it again takes it back" : "Apple News suggests more or fewer like it");
+            reactTile.Hint = !has ? pick : reactError;
 
             bool read = has && library.IsRead(s.Id) && s.Id != keptUnread;
             unreadTile.Enabled = has;
             unreadTile.Icon = read ? "○" : "●";
             unreadTile.Label = read ? "Mark as unread" : "Mark as read";
-            unreadTile.Hint = !has ? pick : read ? "Read on this computer  ·  Enter makes it new again"
-                : ReadMode == "dim" ? "Enter fades it on the front page" : ReadMode == "hide"
-                ? "Enter hides it from the front page" : "Enter counts it as read";
+            unreadTile.Hint = !has ? pick : null;
 
             moreTile.Enabled = has && moreChoices.Count > 0;
             string[] choice = moreTile.Enabled ? moreChoices[moreIndex] : null;
             moreTile.Label = choice != null ? choice[0] : "More like this";
             moreTile.Value = moreChoices.Count > 1 ? (moreIndex + 1) + " of " + moreChoices.Count : "";
             moreTile.Hint = !has ? pick : moreBusy ? "Loading…" : moreError ?? (moreChoices.Count > 1
-                ? "◀ ▶ more choices  ·  Enter shows them" : "Enter shows them");
-
-            if (webTile != null) webTile.Hint = "The publisher's page, with its links and embeds";
+                ? "◀ ▶ more choices  ·  Enter to show" : "Enter to show");
 
             int step = reader.SizeStep;
             sizeTile.Position = step;
@@ -1233,9 +1228,8 @@ namespace Broadsheet
             themeTile.Value = THEME_NAMES[IndexOf(THEMES, ThemeMode)];
             themeTile.Hint = ThemeMode == "auto" ? SunHint() : "◀ Automatic follows sunset";
 
-            readTile.Value = READ_NAMES[IndexOf(READ_MODES, ReadMode)];
-            int n = library.ReadCount;
-            readTile.Hint = (n == 0 ? "None yet" : n + (n == 1 ? " story" : " stories") + " read on this computer") + "  ·  ◀ ▶";
+            readTile.Value = "";
+            readTile.Hint = READ_NAMES[IndexOf(READ_MODES, ReadMode)] + "  ·  ◀ ▶";
 
             if (continueTile != null)
             {

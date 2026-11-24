@@ -7,6 +7,13 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- Options, all ports: shorter. "Save story" reads **Save story on Mac** (**Unsave story on Mac**
+  once saved); "Appearance" is now **Dark mode**. The explanations under Save, Like or dislike,
+  Mark as read and Open in the browser are gone (errors still show there). More from says "OK
+  to show" (TV), "Tap to show" (phone), "Enter to show" (Windows). Stories you've read shows its
+  setting underneath (Do nothing, Dim after reading, Hide after reading) instead of a count.
+- Windows: the mouse wheel over the text size slider scrolls the Options panel instead of
+  changing the size.
 - TV: Back on the front page no longer closes Broadsheet straight away. From a story it goes
   to the section on the rail, then to the rail's top entry; only Back there leaves the app.
 - Windows: Backspace, Esc and the mouse's back button do the same on the front page (story,

@@ -64,15 +64,15 @@ your network by itself.
   rail's square style. It acts on the story being read, or on the focused card:
   - **On the Mac** (like Handoff): when you're reading a story in Apple News on the Mac, or were
     in the last half hour, it's at the top of the panel; OK carries on with it on the TV.
-  - **Save story** to Saved Stories on the Mac, or take it out again.
+  - **Save story on Mac** to Saved Stories on the Mac, or **Unsave story on Mac** to take it out again.
   - **Mark as unread** (or as read): a story read on the TV stops being dimmed or hidden.
   - **Like or dislike**: Apple News's *Suggest More / Fewer Stories Like This*. OK on the same one
     takes it back.
   - **More from** the publisher, **More on** one of the story's topics, or **Related stories**,
     as a new section at the top of the rail. The Mac loads more of the channel in the background.
   - **Text size** on a slider of ten steps, from 14 pt for close reading to 40 pt for across the
-    room (the column widens for the big sizes), **Appearance** (automatic, dark, light), **Stories you've read**
-    (show, dim or hide them), **Continue reading** the last unfinished story, **Refresh now** and
+    room (the column widens for the big sizes), **Dark mode** (automatic, dark, light), **Stories you've read**
+    (do nothing, dim after reading or hide after reading), **Continue reading** the last unfinished story, **Refresh now** and
     how often to refresh by itself.
   - The footer says whether the Mac is answering and how much it has to do.
 - **Light by day, dark at night:** in Automatic, the page turns light at sunrise and dark at

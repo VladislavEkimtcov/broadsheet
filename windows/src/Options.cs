@@ -313,7 +313,7 @@ namespace Broadsheet
                 System.Windows.Threading.DispatcherPriority.Input);
         }
 
-        bool FieldOpen { get { return popupOpen && fieldDone != null; } }
+        public bool FieldOpen { get { return popupOpen && fieldDone != null; } }
 
         public bool IsPopupOpen { get { return popupOpen; } }
 

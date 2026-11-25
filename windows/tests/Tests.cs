@@ -129,6 +129,25 @@ namespace Broadsheet
                 Check(Ladder.Near(N(c, "scroll"), N(c, "viewport"), N(c, "content"), N(c, "screens")) == c.Bool("expect"), "ladder: near, " + c.Str("name"));
         }
 
+        static void SwipeCases(JObj s)
+        {
+            foreach (JObj c in Each(s, "bursts"))
+            {
+                Swipe swipe = new Swipe();
+                List<string> got = new List<string>();
+                foreach (object e in c.Arr("events"))
+                {
+                    List<object> ev = (List<object>)e;
+                    int r = swipe.Feed((int)Convert.ToDouble(ev[0]), Convert.ToDouble(ev[1]), Convert.ToDouble(ev[2]));
+                    if (r != Swipe.NONE) got.Add(r == Swipe.BACK ? "back" : "options");
+                }
+                List<object> want = c.Arr("expect");
+                bool ok = got.Count == want.Count;
+                for (int i = 0; ok && i < got.Count; i++) ok = got[i] == (string)want[i];
+                Check(ok, "swipe: " + c.Str("name") + (ok ? "" : " (got " + string.Join(", ", got) + ")"));
+            }
+        }
+
         static void SseCases(JObj s)
         {
             foreach (JObj c in Each(s, "streams"))
@@ -170,6 +189,7 @@ namespace Broadsheet
                 SunCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sun.json"))));
                 LadderCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "ladder.json"))));
                 SseCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sse.json"))));
+                SwipeCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "swipe.json"))));
             }
 
             // Stories as the relay sends them

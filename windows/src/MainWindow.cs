@@ -22,7 +22,7 @@ namespace Broadsheet
     /// PARITY WITH THE TV APP (src/io/github/vladislavekimtcov/broadsheet/, Java): there is no shared
     /// code (C# 5 / .NET 4.8 vs Java / Android), so features are ported by hand. PARITY.md at the repo
     /// root lists every feature, what each app does, and which differences are deliberate (mouse,
-    /// touchpad, icon buttons, Open in the browser, F5/F11, no Bonjour, MediaElement video, paragraph
+    /// touchpad and its swipes, icon buttons, Open in the browser, F5/F11, no Bonjour, MediaElement video, paragraph
     /// splitting). Code is tagged "// feature: <id>"; grep the ID to find the other side.
     /// </summary>
     sealed class MainWindow : Window, Front.IListener, Reader.IListener, Player.IListener, Options.IListener, Events.IListener
@@ -197,7 +197,11 @@ namespace Broadsheet
                 }
             });
 
-            SourceInitialized += (s, e) => DarkTitleBar();
+            SourceInitialized += (s, e) =>
+            {
+                DarkTitleBar();
+                HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(WndProc);
+            };
             ContentRendered += (s, e) => Paths.Log("first frame");
             Loaded += (s, e) =>
             {
@@ -1502,6 +1506,48 @@ namespace Broadsheet
             library.Save();
         }
 
+        // ------------------------------------------------------------------ touchpad swipes
+
+        const int WM_MOUSEWHEEL = 0x020A, WM_MOUSEHWHEEL = 0x020E;
+        readonly Swipe swipe = new Swipe();
+
+        /// <summary>
+        /// WPF has no sideways wheel event, so the window's own messages are watched: a precision
+        /// touchpad's two-finger scroll arrives as WM_MOUSEHWHEEL (across) and WM_MOUSEWHEEL (up and
+        /// down), the same messages Chrome reads for its swipe back. Up and down are only looked at
+        /// here; WPF still scrolls the page with them.
+        /// </summary>
+        IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)  // feature: win.swipe
+        {
+            if (msg != WM_MOUSEHWHEEL && msg != WM_MOUSEWHEEL) return IntPtr.Zero;
+            int delta = unchecked((short)((wParam.ToInt64() >> 16) & 0xFFFF));
+            bool across = msg == WM_MOUSEHWHEEL;
+            lastInputAt = Dates.NowMs();
+            int action = swipe.Feed(Environment.TickCount, across ? delta : 0, across ? 0 : delta);
+            if (across) handled = true; // nothing in the window scrolls sideways
+            if (action == Swipe.BACK) Dispatcher.BeginInvoke(new Action(SwipeBack));
+            else if (action == Swipe.OPTIONS) Dispatcher.BeginInvoke(new Action(SwipeOptions));
+            return IntPtr.Zero;
+        }
+
+        /// <summary>A swipe from right to left: whatever Backspace would do (closes the video, the
+        /// pop-up, Options or the story; on the front page, one step up the rail). A relay address
+        /// being typed is left as Esc leaves it, without deleting a letter.</summary>
+        void SwipeBack()
+        {
+            Paths.Log("swipe: back");
+            if (options.IsOpen && options.FieldOpen) options.OnKey(Key.Escape, false);
+            else OnKey(Key.BrowserBack, false);
+        }
+
+        /// <summary>A swipe from left to right: Options, as M or the right button opens it.</summary>
+        void SwipeOptions()
+        {
+            Paths.Log("swipe: options");
+            if (player.IsPlaying || options.IsOpen) return;
+            OpenOptions(OptionsTarget(), true);
+        }
+
         // ------------------------------------------------------------------ keys
 
         void OnKeyDown(object sender, KeyEventArgs e)
@@ -1513,38 +1559,38 @@ namespace Broadsheet
                 e.Handled = true;
                 return;
             }
+            e.Handled = OnKey(k, e.IsRepeat);
+        }
+
+        /// <summary>A key, or a touchpad swipe standing in for one: true when something took it.</summary>
+        bool OnKey(Key k, bool repeat)
+        {
             if (player.IsPlaying)
             {
-                e.Handled = player.OnKey(k);
-                return;
+                return player.OnKey(k);
             }
             if (options.IsOpen)
             {
-                e.Handled = options.OnKey(k, e.IsRepeat);
-                return;
+                return options.OnKey(k, repeat);
             }
             if (k == Key.Apps || k == Key.M || (k == Key.F10 && (Keyboard.Modifiers & ModifierKeys.Shift) != 0))
             {
-                if (!e.IsRepeat) OpenOptions(OptionsTarget(), true);
-                e.Handled = true;
-                return;
+                if (!repeat) OpenOptions(OptionsTarget(), true);
+                return true;
             }
             if (k == Key.F5)
             {
-                if (!e.IsRepeat) { RefreshNow(); Load(); }
-                e.Handled = true;
-                return;
+                if (!repeat) { RefreshNow(); Load(); }
+                return true;
             }
             if (k == Key.Escape && WindowStyle == WindowStyle.None && !ReaderShown)
             {
                 ToggleFullScreen();
-                e.Handled = true;
-                return;
+                return true;
             }
             if (ReaderShown)
             {
-                e.Handled = reader.OnKey(k);
-                return;
+                return reader.OnKey(k);
             }
             if (!front.HasContent && k == Key.Enter)
             {
@@ -1553,16 +1599,14 @@ namespace Broadsheet
                     ShowMessage("Looking for Apple News Relay on your network…");
                     Load();
                 }
-                e.Handled = true;
-                return;
+                return true;
             }
             if (k == Key.Back || k == Key.BrowserBack || k == Key.Escape)
             {
-                if (!e.IsRepeat) front.OnBack();  // one step per press
-                e.Handled = true;
-                return;
+                if (!repeat) front.OnBack();  // one step per press
+                return true;
             }
-            e.Handled = front.OnKey(k);
+            return front.OnKey(k);
         }
     }
 }

@@ -42,7 +42,8 @@ While developing, install once with `-Persistent`; after that, `build.cmd && pow
 - **Mouse and touchpad:** hovering focuses a card and clicking opens it. The wheel scrolls like a
   browser: notched wheels glide, and precision touchpads track your fingers 1:1. In a story, the
   ← at the top left goes back, and the ☰ at the top right (or a right-click) slides out Options.
-  The mouse's back button also works.
+  The mouse's back button also works. **Two-finger swipes** on a precision touchpad work as in
+  Chrome: right to left goes back (what Backspace does), left to right opens Options.
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
   zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". More stories like this › opens a pop-up

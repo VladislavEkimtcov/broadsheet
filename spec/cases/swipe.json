@@ -1,0 +1,17 @@
+{
+  "about": "Two-finger touchpad swipes on Windows (windows/src/Swipe.cs, feature win.swipe): a burst of scroll messages, each [t ms, horizontal delta (+ scrolls right), vertical delta], gives at most one action. Scrolling left is back, right is options; 300 units across, at least twice the travel up or down; a 250 ms pause ends the burst. Windows only: the phone's swipes go to the previous or next story (phone.swipe), so only windows/tests/Tests.cs reads this file.",
+  "bursts": [
+    { "name": "fingers right to left (scroll left): back", "events": [[0, -40, 0], [8, -90, 0], [16, -120, 0], [24, -80, 0]], "expect": ["back"] },
+    { "name": "fingers left to right (scroll right): options", "events": [[0, 60, 0], [8, 120, 0], [16, 140, 0]], "expect": ["options"] },
+    { "name": "a short nudge does nothing", "events": [[0, -60, 0], [8, -80, 0], [16, -50, 0]], "expect": [] },
+    { "name": "coasting after the fingers lift stays one swipe", "events": [[0, -200, 0], [8, -200, 0], [16, -150, 0], [40, -90, 0], [90, -40, 0], [200, -10, 0], [420, -4, 0]], "expect": ["back"] },
+    { "name": "two swipes with a pause between: two actions", "events": [[0, -200, 0], [8, -200, 0], [600, 200, 0], [608, 200, 0]], "expect": ["back", "options"] },
+    { "name": "pauses longer than 250 ms split small pieces that never add up", "events": [[0, -200, 0], [300, -200, 0], [600, -200, 0]], "expect": [] },
+    { "name": "a diagonal page scroll is not a swipe", "events": [[0, -120, 80], [8, -120, 80], [16, -120, 80]], "expect": [] },
+    { "name": "mostly across with a little down still counts", "events": [[0, -150, 20], [8, -150, 20], [16, -100, 10]], "expect": ["back"] },
+    { "name": "scrolling down first, then sideways in the same burst, waits until across is twice the down", "events": [[0, 0, -150], [8, -200, 0], [16, -200, 0], [24, -200, 0]], "expect": ["back"] },
+    { "name": "back and forth cancels out", "events": [[0, -200, 0], [8, 200, 0], [16, -200, 0], [24, 200, 0]], "expect": [] },
+    { "name": "held tilt wheel clicks: one action", "events": [[0, -120, 0], [50, -120, 0], [100, -120, 0], [150, -120, 0], [200, -120, 0]], "expect": ["back"] },
+    { "name": "the tick count wrapping past int's top doesn't break a burst", "events": [[2147483600, -200, 0], [-2147483640, -200, 0]], "expect": ["back"] }
+  ]
+}

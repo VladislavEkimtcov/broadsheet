@@ -60,6 +60,7 @@
     <Compile Include="src\Ui.cs" />
     <Compile Include="src\Images.cs" />
     <Compile Include="src\Scroller.cs" />
+    <Compile Include="src\Swipe.cs" />
     <Compile Include="src\Card.cs" />
     <Compile Include="src\Front.cs" />
     <Compile Include="src\Reader.cs" />

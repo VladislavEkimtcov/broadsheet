@@ -131,15 +131,32 @@ namespace Broadsheet
 
         static void SwipeCases(JObj s)
         {
-            foreach (JObj c in Each(s, "bursts"))
+            foreach (JObj c in Each(s, "cases"))
             {
                 Swipe swipe = new Swipe();
                 List<string> got = new List<string>();
+                Action<int> note = r =>
+                {
+                    if (r == Swipe.STARTED) got.Add("started");
+                    else if (r == Swipe.BACK) got.Add("back");
+                    else if (r == Swipe.OPTIONS) got.Add("options");
+                    else if (r == Swipe.CANCEL) got.Add("cancel");
+                };
                 foreach (object e in c.Arr("events"))
                 {
                     List<object> ev = (List<object>)e;
-                    int r = swipe.Feed((int)Convert.ToDouble(ev[0]), Convert.ToDouble(ev[1]), Convert.ToDouble(ev[2]));
-                    if (r != Swipe.NONE) got.Add(r == Swipe.BACK ? "back" : "options");
+                    string kind = (string)ev[0];
+                    Func<int, int> n = i => (int)Convert.ToDouble(ev[i]);
+                    if (kind == "wheel") note(swipe.Feed(n(1), Convert.ToDouble(ev[2]), Convert.ToDouble(ev[3])));
+                    else if (kind == "drag") for (int t = n(1); t <= n(2); t += n(3)) note(swipe.Feed(t, Convert.ToDouble(ev[4]), 0));
+                    else if (kind == "touch")
+                    {
+                        for (int t = n(1); t < n(2); t += 8) swipe.Touch(t);
+                        swipe.Touch(n(2));
+                    }
+                    else if (kind == "limit") swipe.Limit(Convert.ToDouble(ev[1]), Convert.ToDouble(ev[2]));
+                    else if (kind == "poll") note(swipe.Poll(n(1)));
+                    else if (kind == "progress") got.Add("p=" + Math.Round(swipe.Progress, 2).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
                 }
                 List<object> want = c.Arr("expect");
                 bool ok = got.Count == want.Count;

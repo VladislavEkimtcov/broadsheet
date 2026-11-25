@@ -427,6 +427,33 @@ namespace Broadsheet
             listener.OnOptionsClosed();
         }
 
+        /// <summary>
+        /// Holds the open panel part way in, for a touchpad swipe that's still moving (win.swipe):
+        /// 1 all the way in, 0 just off the right edge, the shade behind it in step. Close or Open
+        /// (or another Peek) takes over from wherever it is.
+        /// </summary>
+        public void Peek(double shown)
+        {
+            if (!open) return;
+            shown = Math.Max(0, Math.Min(1, shown));
+            slide.BeginAnimation(TranslateTransform.XProperty, null);
+            scrim.BeginAnimation(OpacityProperty, null);
+            Visibility = Visibility.Visible;
+            slide.X = (1 - shown) * WIDTH;
+            scrim.Opacity = shown;
+        }
+
+        /// <summary>The same for the pop-up over the panel: 1 shown, 0 faded out.</summary>
+        public void PeekPopup(double shown)
+        {
+            if (!popupOpen) return;
+            shown = Math.Max(0, Math.Min(1, shown));
+            popupShade.BeginAnimation(OpacityProperty, null);
+            popup.BeginAnimation(OpacityProperty, null);
+            popupShade.Opacity = shown;
+            popup.Opacity = shown;
+        }
+
         public void SetFooter(string text) { footer.Text = text; }  // feature: opt.status_footer
 
         /// <summary>Redraws the tiles after their state changed.</summary>

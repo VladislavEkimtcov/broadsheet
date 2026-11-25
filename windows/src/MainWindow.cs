@@ -200,7 +200,9 @@ namespace Broadsheet
             SourceInitialized += (s, e) =>
             {
                 DarkTitleBar();
-                HwndSource.FromHwnd(new WindowInteropHelper(this).Handle).AddHook(WndProc);
+                IntPtr hwnd = new WindowInteropHelper(this).Handle;
+                HwndSource.FromHwnd(hwnd).AddHook(WndProc);
+                WatchTouchpad(hwnd);
             };
             ContentRendered += (s, e) => Paths.Log("first frame");
             Loaded += (s, e) =>
@@ -1508,44 +1510,214 @@ namespace Broadsheet
 
         // ------------------------------------------------------------------ touchpad swipes
 
-        const int WM_MOUSEWHEEL = 0x020A, WM_MOUSEHWHEEL = 0x020E;
+        const int WM_INPUT = 0x00FF, WM_MOUSEWHEEL = 0x020A, WM_MOUSEHWHEEL = 0x020E;
         readonly Swipe swipe = new Swipe();
+
+        /// <summary>What a swipe moves, fixed when it starts: the top thing on screen then.</summary>
+        enum SwipeOver { Front, Reader, Options, Popup, Player }
+        SwipeOver swipeOver;
+        /// <summary>Options opened by this swipe (dragged in from the right), not before it.</summary>
+        bool swipeOpened;
+        /// <summary>Where the animation stands: -1 back done … 0 at rest … +1 Options in.</summary>
+        double swipeAt;
+        bool swipePolling;
+        // The spring to the end (or back to rest) after the fingers lift.
+        bool settling;
+        double settleFrom, settleTo;
+        int settleStart;
+        Action settled;
+        const int SETTLE_MS = 180;
+        int swipeReports, swipeWheels;
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct RawInputDevice { public ushort UsagePage, Usage; public int Flags; public IntPtr Target; }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        static extern bool RegisterRawInputDevices(RawInputDevice[] devices, int count, int size);
+
+        /// <summary>
+        /// Precision touchpads (HID digitizer page 0x0D, usage 0x05) send WM_INPUT reports all the
+        /// while a finger is down, while this window is in front: that's how a swipe knows the
+        /// fingers lifted. Without them (no such touchpad) a swipe ends at a pause instead.
+        /// </summary>
+        void WatchTouchpad(IntPtr hwnd)
+        {
+            RawInputDevice[] d = { new RawInputDevice { UsagePage = 0x0D, Usage = 0x05, Flags = 0, Target = hwnd } };
+            if (!RegisterRawInputDevices(d, 1, Marshal.SizeOf(typeof(RawInputDevice))))
+                Paths.Log("swipe: no touchpad reports (" + Marshal.GetLastWin32Error() + ")");
+        }
 
         /// <summary>
         /// WPF has no sideways wheel event, so the window's own messages are watched: a precision
         /// touchpad's two-finger scroll arrives as WM_MOUSEHWHEEL (across) and WM_MOUSEWHEEL (up and
-        /// down), the same messages Chrome reads for its swipe back. Up and down are only looked at
-        /// here; WPF still scrolls the page with them.
+        /// down), the same messages Chrome reads for its swipe back. Until a swipe starts, up and
+        /// down go on to WPF and scroll the page; during one, the swipe has them all.
         /// </summary>
         IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)  // feature: win.swipe
         {
+            if (msg == WM_INPUT)
+            {
+                swipe.Touch(Environment.TickCount);
+                swipeReports++;
+                return IntPtr.Zero; // DefWindowProc frees the report
+            }
             if (msg != WM_MOUSEHWHEEL && msg != WM_MOUSEWHEEL) return IntPtr.Zero;
             int delta = unchecked((short)((wParam.ToInt64() >> 16) & 0xFFFF));
             bool across = msg == WM_MOUSEHWHEEL;
             lastInputAt = Dates.NowMs();
-            int action = swipe.Feed(Environment.TickCount, across ? delta : 0, across ? 0 : delta);
-            if (across) handled = true; // nothing in the window scrolls sideways
-            if (action == Swipe.BACK) Dispatcher.BeginInvoke(new Action(SwipeBack));
-            else if (action == Swipe.OPTIONS) Dispatcher.BeginInvoke(new Action(SwipeOptions));
+            int r = swipe.Feed(Environment.TickCount, across ? delta : 0, across ? 0 : delta);
+            if (r == Swipe.STARTED) StartSwipe();
+            if (swipe.Engaged)
+            {
+                swipeWheels++;
+                ShowSwipe(swipe.Progress);
+                handled = true;
+            }
+            else if (across) handled = true; // nothing in the window scrolls sideways
             return IntPtr.Zero;
         }
 
-        /// <summary>A swipe from right to left: whatever Backspace would do (closes the video, the
-        /// pop-up, Options or the story; on the front page, one step up the rail). A relay address
-        /// being typed is left as Esc leaves it, without deleting a letter.</summary>
-        void SwipeBack()
+        void StartSwipe()
         {
-            Paths.Log("swipe: back");
-            if (options.IsOpen && options.FieldOpen) options.OnKey(Key.Escape, false);
-            else OnKey(Key.BrowserBack, false);
+            if (settling) EndSettle();
+            if (player.IsPlaying) swipeOver = SwipeOver.Player;
+            else if (options.IsOpen && options.IsPopupOpen) swipeOver = SwipeOver.Popup;
+            else if (options.IsOpen) swipeOver = SwipeOver.Options;
+            else if (ReaderShown) swipeOver = SwipeOver.Reader;
+            else swipeOver = SwipeOver.Front;
+            bool canOptions = swipeOver == SwipeOver.Front || swipeOver == SwipeOver.Reader;
+            swipe.Limit(-1, canOptions ? 1 : 0);
+            swipeOpened = false;
+            swipeAt = 0;
+            swipeReports = 0;
+            swipeWheels = 0;
+            if (!swipePolling)
+            {
+                swipePolling = true;
+                CompositionTarget.Rendering += PollSwipe;
+            }
         }
 
-        /// <summary>A swipe from left to right: Options, as M or the right button opens it.</summary>
-        void SwipeOptions()
+        /// <summary>Each frame of a swipe: have the fingers lifted?</summary>
+        void PollSwipe(object sender, EventArgs e)
         {
-            Paths.Log("swipe: options");
-            if (player.IsPlaying || options.IsOpen) return;
-            OpenOptions(OptionsTarget(), true);
+            int r = swipe.Poll(Environment.TickCount);
+            if (r == Swipe.NONE) return;
+            swipePolling = false;
+            CompositionTarget.Rendering -= PollSwipe;
+            Paths.Log("swipe: " + (r == Swipe.BACK ? "back" : r == Swipe.OPTIONS ? "options" : "cancel") + " over " + swipeOver
+                + " at " + swipeAt.ToString("0.00") + ", " + Math.Round(swipe.Velocity) + "/s, "
+                + swipeWheels + " scrolls, " + swipeReports + " touchpad reports");
+            if (r == Swipe.BACK) SwipeBack();
+            else if (r == Swipe.OPTIONS) Settle(1, null);
+            else Settle(0, () => { if (swipeOpened) options.Close(); });
+        }
+
+        /// <summary>The page as the swipe stands: p from -1 (back done) to +1 (Options in place).</summary>
+        void ShowSwipe(double p)  // feature: win.swipe
+        {
+            swipeAt = p;
+            double back = Math.Max(0, -p), w = root.ActualWidth;
+            switch (swipeOver)
+            {
+                case SwipeOver.Player:
+                    Shift(player, -back * w);
+                    break;
+                case SwipeOver.Popup:
+                    options.PeekPopup(1 - back);
+                    break;
+                case SwipeOver.Options:
+                    options.Peek(1 - back);
+                    break;
+                default:
+                    if (p > 0 && !swipeOpened)
+                    {
+                        // Dragged in from the right, filled for the story in view, as M would.
+                        OpenOptions(OptionsTarget(), false);
+                        swipeOpened = true;
+                    }
+                    if (swipeOpened) options.Peek(Math.Max(0, p));
+                    // The story slides away with the fingers, uncovering the front page under it;
+                    // on the front page, Back only steps along the rail, so the page gives a little.
+                    if (swipeOver == SwipeOver.Reader) Shift(reader, -back * w);
+                    else Shift(front, -back * 90);
+                    break;
+            }
+        }
+
+        static void Shift(UIElement e, double x)
+        {
+            TranslateTransform t = e.RenderTransform as TranslateTransform;
+            if (t == null || t.IsFrozen)
+            {
+                if (x == 0) return;
+                e.RenderTransform = t = new TranslateTransform();
+            }
+            t.X = x;
+        }
+
+        /// <summary>The fingers lifted past half way (or flicked) toward Back: finish what Backspace does.</summary>
+        void SwipeBack()
+        {
+            switch (swipeOver)
+            {
+                case SwipeOver.Player:
+                    Settle(-1, () => { player.Close(); Shift(player, 0); });
+                    break;
+                case SwipeOver.Popup:
+                    // A relay address being typed is left as Esc leaves it, without deleting a letter.
+                    if (options.FieldOpen) options.OnKey(Key.Escape, false);
+                    else options.ClosePopup();
+                    break;
+                case SwipeOver.Options:
+                    options.Close(); // slides on out from where the fingers left it
+                    break;
+                case SwipeOver.Reader:
+                    Settle(-1, () =>
+                    {
+                        if (swipeOpened) options.Close();
+                        if (ReaderShown) OnClose();
+                        Shift(reader, 0);
+                    });
+                    break;
+                default:
+                    if (swipeOpened) options.Close();
+                    front.OnBack();  // one step along the rail, as Backspace
+                    Settle(0, null);
+                    break;
+            }
+        }
+
+        /// <summary>Eases the swipe from where it is to `to`, then runs done.</summary>
+        void Settle(double to, Action done)
+        {
+            if (settling) EndSettle();
+            settleFrom = swipeAt;
+            settleTo = to;
+            settled = done;
+            settleStart = Environment.TickCount;
+            settling = true;
+            CompositionTarget.Rendering += SettleFrame;
+        }
+
+        void SettleFrame(object sender, EventArgs e)
+        {
+            double k = Math.Min(1, unchecked(Environment.TickCount - settleStart) / (double)SETTLE_MS);
+            if (k >= 1) { EndSettle(); return; }
+            double ease = 1 - Math.Pow(1 - k, 3);
+            ShowSwipe(settleFrom + (settleTo - settleFrom) * ease);
+        }
+
+        /// <summary>Jumps to the end of the spring (also when a new swipe starts during it).</summary>
+        void EndSettle()
+        {
+            if (!settling) return;
+            settling = false;
+            CompositionTarget.Rendering -= SettleFrame;
+            ShowSwipe(settleTo);
+            Action done = settled;
+            settled = null;
+            if (done != null) done();
         }
 
         // ------------------------------------------------------------------ keys

@@ -7,12 +7,14 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
-- Windows: two-finger swipes on a precision touchpad, read the way Chrome reads them. Fingers
-  from the right of the pad to the left go back, as Backspace does: they close the video, the
-  pop-up, Options or the story, and on the front page step up the rail. Left to right opens
-  Options. A diagonal scroll of the page doesn't count, and one swipe is one step, however far
-  it coasts. If your touchpad's scrolling direction is reversed in Windows, the swipes reverse
-  with it, as in Chrome.
+- Windows: two-finger swipes on a precision touchpad, read the way Chrome reads them, and
+  animated under your fingers. Fingers from the right of the pad to the left go back, as
+  Backspace does: the story (or video) slides away with them and uncovers the front page,
+  Options slides back out, a pop-up fades; on the front page the page gives a little and focus
+  steps up the rail. Left to right draws Options in from the right edge. Move back and forth to
+  rewind and advance; lift past half way, or flick, to finish, or lift early to spring back. A
+  diagonal scroll of the page doesn't count. If your touchpad's scrolling direction is reversed
+  in Windows, the swipes reverse with it, as in Chrome.
 - Windows: `install.ps1 -Persistent` (or `--persistent`) installs Broadsheet as a scheduled task
   named Broadsheet that starts it now and at every sign-in. Running install.ps1 again after a
   build stops it, copies the new exe and starts it again on the desktop, also from an ssh

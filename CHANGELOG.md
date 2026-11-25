@@ -5,6 +5,13 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
+## 0.6.0
+
+2026-11-25. **Auto-updates from GitHub Releases, all ports:** release builds watch GitHub Releases quietly (using `HEAD /releases/latest` without hitting the API rate limit), download and verify new releases in the background, and never interrupt reading:
+
+- **Windows:** extracts `Broadsheet.exe` from `broadsheet-windows.zip`, verifies its PE header and version, stages `Broadsheet.exe.new`, and swaps binaries silently on exit (plus **Restart to update** in Options).
+- **Android TV and phone:** downloads `broadsheet.apk`, verifies its version and signing certificate, and shows a non-intrusive notice (banner on phone, rail notice on TV) plus an **Updates** tile in Options to open the Android installer when you're ready.
+
 ## 0.5.0
 
 - Windows: two-finger swipes on a precision touchpad, read the way Chrome reads them, and

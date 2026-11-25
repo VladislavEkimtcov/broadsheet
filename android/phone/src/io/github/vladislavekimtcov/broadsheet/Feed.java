@@ -54,8 +54,8 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     private int current = -1, chosenAt = -1, built;
     private LinearLayout lastRow;
     private int lastRowCount;
-    private TextView sub, status, more, banner;
-    private String statusText = "", bannerText;
+    private TextView sub, status, more, banner, updateBanner;
+    private String statusText = "", bannerText, updateNotice;
     private Story chosen;
     private int lastWidth;
 
@@ -241,6 +241,18 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     }
 
     @Override
+    public void setUpdateNotice(String text) {  // feature: opt.update
+        updateNotice = text;
+        applyUpdateBanner();
+    }
+
+    private void applyUpdateBanner() {
+        if (updateBanner == null) return;
+        updateBanner.setText(updateNotice);
+        updateBanner.setVisibility(updateNotice == null || updateNotice.isEmpty() ? GONE : VISIBLE);
+    }
+
+    @Override
     public void showMessage(String text) {  // feature: phone.offline
         if (!sections.isEmpty()) {
             setBanner(text);  // what's here stays readable; the note says what's wrong
@@ -381,6 +393,14 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         lastWidth = viewWidth();
         int cw = contentWidth(), n = columns(), gap = Ui.dp(GAP_DP), tile = tileWidth();
         int tileH = tile * 9 / 16 + Ui.dp(96);
+
+        updateBanner = Ui.text(c, 14, Ui.INK, Ui.sansMedium);
+        updateBanner.setLineSpacing(0, 1.25f);
+        updateBanner.setPadding(Ui.dp(14), Ui.dp(10), Ui.dp(12), Ui.dp(10));
+        updateBanner.setBackground(new RailBlock());
+        updateBanner.setOnClickListener(v -> listener.onInstallUpdate());
+        page.addView(updateBanner, block(cw, 0, Ui.dp(12)));
+        applyUpdateBanner();
 
         banner = Ui.text(c, 14, Ui.INK, Ui.sans);
         banner.setLineSpacing(0, 1.25f);

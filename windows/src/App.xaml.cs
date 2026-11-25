@@ -10,6 +10,9 @@ namespace Broadsheet
         void OnStartup(object sender, StartupEventArgs e)
         {
             DispatcherUnhandledException += OnCrash;
+            Exit += (s, ev) => Updater.ApplyPendingUpdate(false);
+            SessionEnding += (s, ev) => Updater.ApplyPendingUpdate(false);
+            AppDomain.CurrentDomain.ProcessExit += (s, ev) => Updater.ApplyPendingUpdate(false);
             MainWindow w = new MainWindow();
             w.Show();
         }

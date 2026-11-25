@@ -48,7 +48,9 @@ While developing, install once with `-Persistent`; after that, `build.cmd && pow
   rewinds and advances it; lift past half way (or flick) to finish, or earlier to spring back.
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
-  zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". More stories like this › opens a pop-up
+  zone), read stories, continue reading, refresh, and **Updates** (release builds watch GitHub
+  Releases quietly in the background, stage `Broadsheet.exe.new`, and swap binaries on exit, or
+  restart on demand from Options). Windows adds "Open in the browser". More stories like this › opens a pop-up
   of choices; Refresh now has ‹ › buttons for how often. The wheel
   always scrolls the panel and never changes a setting: ◀ ▶ do that, a click on the text size
   track moves the knob there, and a click on Dark mode or Stories you've read goes to the next

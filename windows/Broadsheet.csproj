@@ -21,10 +21,13 @@
     <ApplicationIcon>Broadsheet.ico</ApplicationIcon>
     <GenerateManifests>false</GenerateManifests>
     <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
+    <DefineConstants Condition="'$(EnableAutoUpdate)' == 'true'">ENABLE_AUTO_UPDATE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />
@@ -50,6 +53,8 @@
     <Compile Include="src\Net.cs" />
     <Compile Include="src\Dates.cs" />
     <Compile Include="src\Sun.cs" />
+    <Compile Include="src\Updates.cs" />
+    <Compile Include="src\Updater.cs" />
     <Compile Include="src\Model.cs" />
     <Compile Include="src\Store.cs" />
     <Compile Include="src\Ladder.cs" />

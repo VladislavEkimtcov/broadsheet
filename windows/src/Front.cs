@@ -43,7 +43,7 @@ namespace Broadsheet
         readonly IListener listener;
         readonly StackPanel railList = new StackPanel();
         readonly Scroller railScroll = new Scroller();
-        readonly TextBlock status, message, dateLine;
+        readonly TextBlock updateNotice, status, message, dateLine;
         readonly Scroller page = new Scroller();
         readonly Canvas grid = new Canvas();
         readonly List<RailItem> railItems = new List<RailItem>();
@@ -81,6 +81,13 @@ namespace Broadsheet
             status.Margin = new Thickness(26, 12, 14, 22);
             DockPanel.SetDock(status, Dock.Bottom);
             rail.Children.Add(status);
+            updateNotice = Text(11.5, Ui.ACCENT, Ui.SansMedium);
+            updateNotice.LineHeight = 11.5 * 1.35;
+            updateNotice.TextWrapping = TextWrapping.Wrap;
+            updateNotice.Margin = new Thickness(26, 8, 14, 0);
+            updateNotice.Visibility = Visibility.Collapsed;
+            DockPanel.SetDock(updateNotice, Dock.Bottom);
+            rail.Children.Add(updateNotice);
             railScroll.Content = railList;
             railScroll.Margin = new Thickness(26 - 14, 0, 14, 0);
             // Today can have twenty-odd sections: the rail scrolls with focus, its ends fading out.
@@ -161,6 +168,17 @@ namespace Broadsheet
         {
             get { return status.Text; }
             set { if (status.Text != value) status.Text = value; } // nothing to redraw when it's the same
+        }
+
+        public string UpdateNotice  // feature: opt.update
+        {
+            get { return updateNotice.Text; }
+            set
+            {
+                string next = value ?? "";
+                if (updateNotice.Text != next) updateNotice.Text = next;
+                updateNotice.Visibility = string.IsNullOrEmpty(next) ? Visibility.Collapsed : Visibility.Visible;
+            }
         }
 
         /// <summary>Shown instead of the grid when there is nothing to show.</summary>

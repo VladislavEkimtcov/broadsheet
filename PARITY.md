@@ -85,6 +85,7 @@ renumbered when the ports started sharing one version).
 | `opt.continue` | Continue reading the last unfinished story | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.refresh` | Refresh now | ✅ | ✅ 0.4.0 | ✅ |  |
 | `opt.auto_refresh` | Refresh by itself every 25 min / hour / off | ✅ | ✅ 0.4.0 | ✅ |  |
+| `opt.update` | Watch GitHub Releases (`HEAD /releases/latest`), download & verify updates in the background, install gracefully | ✅ | ✅ | ✅ | Cases: `spec/cases/update.json`. Release builds enable background checks (30 s after launch, throttled to 4 h). TV/Phone: non-intrusive notice/banner + Options tile opens Android installer when selected. Windows: stages `Broadsheet.exe.new` and swaps on exit (or Options → Restart to update) |
 | `opt.status_footer` | Footer: is the Mac answering, how much it has to do | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | Stories fetched ahead don't count as waiting |
 | `win.browser` | Open in the browser | — | ✅ 0.4.0 | ✅ | No browser worth handing off to on the TV. Phone: a browser is at hand there too |
 

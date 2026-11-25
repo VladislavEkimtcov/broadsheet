@@ -33,7 +33,7 @@ final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  
     private final Images images;
     private final Listener listener;
     private final LinearLayout rail, railList;
-    private final TextView status;
+    private final TextView updateNotice, status;
     private final Scroller page;
     private final LinearLayout grid;
     private final TextView message;
@@ -99,6 +99,12 @@ final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  
         LinearLayout.LayoutParams rsl = new LinearLayout.LayoutParams(-1, 0, 1);
         rsl.bottomMargin = Ui.dp(12);
         rail.addView(railScroll, rsl);
+        updateNotice = Ui.text(c, 11.5f, Ui.ACCENT, Ui.sansMedium);
+        updateNotice.setLineSpacing(0, 1.2f);
+        updateNotice.setVisibility(GONE);
+        LinearLayout.LayoutParams ul = new LinearLayout.LayoutParams(-1, -2);
+        ul.bottomMargin = Ui.dp(8);
+        rail.addView(updateNotice, ul);
         status = Ui.text(c, 11.5f, Ui.FAINT, Ui.sans);
         status.setLineSpacing(0, 1.25f);
         rail.addView(status);
@@ -135,6 +141,16 @@ final class Front extends FrameLayout implements FrontView, Scroller.Watcher {  
     public void setStatus(String text) {
         if (TextUtils.equals(status.getText(), text)) return;  // nothing to redraw
         status.setText(text);
+    }
+
+    @Override
+    public void setUpdateNotice(String text) {  // feature: opt.update
+        if (TextUtils.isEmpty(text)) {
+            updateNotice.setVisibility(GONE);
+            return;
+        }
+        if (!TextUtils.equals(updateNotice.getText(), text)) updateNotice.setText(text);
+        updateNotice.setVisibility(VISIBLE);
     }
 
     /** Shown instead of the grid when there is nothing to show. */

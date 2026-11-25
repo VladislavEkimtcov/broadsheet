@@ -51,7 +51,7 @@ jobs:
         run: |
           [[ -n $KEYSTORE_B64 && -n $KEYPASS ]] || { echo "::error::ANDROID_KEYSTORE_B64 / ANDROID_KEYSTORE_PASSWORD secrets missing"; exit 1; }
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          BUILD_TOOLS=34.0.0 KEYSTORE="$RUNNER_TEMP/release.keystore" KEYPASS="$KEYPASS" android/build.sh
+          AUTO_UPDATE=1 BUILD_TOOLS=34.0.0 KEYSTORE="$RUNNER_TEMP/release.keystore" KEYPASS="$KEYPASS" android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
       - name: Signed with the pinned key, and the version is the tag's
         run: |
@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build with the in-box toolchain and test
         shell: cmd
-        run: windows\build.cmd test
+        run: windows\build.cmd test && windows\build.cmd release
       - name: Version check and zip
         shell: pwsh
         run: |

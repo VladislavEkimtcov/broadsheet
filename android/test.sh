@@ -13,5 +13,5 @@ JAVAC=${JAVA_HOME:+$JAVA_HOME/bin/}javac
 JAVA=${JAVA_HOME:+$JAVA_HOME/bin/}java
 P=src/io/github/vladislavekimtcov/broadsheet
 rm -rf build/test
-"$JAVAC" -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java tests/CasesTest.java
+"$JAVAC" -d build/test $P/Sun.java $P/Dates.java $P/Ladder.java $P/Sse.java $P/Updates.java tests/CasesTest.java
 "$JAVA" -cp build/test io.github.vladislavekimtcov.broadsheet.CasesTest ../spec/cases

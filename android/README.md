@@ -74,7 +74,8 @@ your network by itself.
   - **Text size** on a slider of ten steps, from 14 pt for close reading to 40 pt for across the
     room (the column widens for the big sizes), **Dark mode** (automatic, dark, light), **Stories you've read**
     (do nothing, dim after reading or hide after reading), **Continue reading** the last unfinished story, **Refresh now** and
-    how often to refresh by itself.
+    how often to refresh by itself, and **Updates** (release builds watch GitHub Releases quietly,
+    verify and stage `broadsheet.apk`, and show a non-intrusive notice to install when ready).
   - The footer says whether the Mac is answering and how much it has to do.
 - **Light by day, dark at night:** in Automatic, the page turns light at sunrise and dark at
   sunset. The TV works out both offline from its time zone (the USNO sunrise equation, as dumbtv's
@@ -139,6 +140,7 @@ No Gradle, no libraries: the bare Android SDK and JDK 17.
 ```sh
 cd android
 ./build.sh                          # build/broadsheet.apk, signed with ../release.keystore (made on first run)
+AUTO_UPDATE=1 ./build.sh            # enable background GitHub Releases update checks (set in CI releases)
 adb install -r build/broadsheet.apk
 ./test.sh                           # the shared cases in ../spec/cases on the JVM
 python3 ../tools/parity.py          # PARITY.md against every front end's code

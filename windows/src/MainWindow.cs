@@ -62,7 +62,7 @@ namespace Broadsheet
 
         // the options panel's state
         Story target;
-        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, webTile, relayTile;
+        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, updateTile, webTile, relayTile;
         string keptUnread;
         Story reading;
         /// <summary>More stories like this: {title, path, kind, id} per choice, for the story in Options.</summary>
@@ -211,6 +211,8 @@ namespace Broadsheet
                 Ui.PixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
                 ApplyTheme();
                 events.Start();
+                Updater.StatusChanged += OnUpdateChanged;
+                Updater.Start(prefs, Dispatcher);
                 Load();
             };
             Activated += (s, e) =>
@@ -241,6 +243,8 @@ namespace Broadsheet
                 LeaveStory();
                 library.Save();
                 events.Stop();
+                Updater.StatusChanged -= OnUpdateChanged;
+                Updater.Stop();
                 ClearInterest();
             };
             PreviewKeyDown += (s, e) => lastInputAt = Dates.NowMs();
@@ -304,6 +308,7 @@ namespace Broadsheet
             root.Children.Add(menu);
             root.Children.Add(player);
             root.Children.Add(options);
+            front.UpdateNotice = Updater.BannerText;
             DarkTitleBar();
         }
 
@@ -1133,6 +1138,7 @@ namespace Broadsheet
                     FillOptions();
                 }
             };
+            updateTile = new Options.Tile("↓", "Updates");  // feature: opt.update
 
             List<Options.Tile> tiles = new List<Options.Tile> { saveTile, reactTile, unreadTile, moreTile };
             if (webTile != null) tiles.Add(webTile);
@@ -1141,6 +1147,7 @@ namespace Broadsheet
             tiles.Add(readTile);
             if (continueTile != null) tiles.Add(continueTile);
             tiles.Add(refreshTile);
+            tiles.Add(updateTile);
             relayTile = new Options.Tile("⌂", "Relay address")  // feature: phone.relay_field
             {
                 Opens = true,
@@ -1272,6 +1279,7 @@ namespace Broadsheet
             // ‹ how often › beside the label, like the phone; a click elsewhere refreshes now.
             refreshTile.Value = REFRESH_NAMES[AutoRefreshStep];
             refreshTile.Hint = refreshing ? "Refreshing Apple News on the Mac…" : loadedAt > 0 ? "Updated " + Dates.Time(loadedAt) : null;
+            FillUpdateTile();
 
             if (relayTile != null)
             {
@@ -1279,6 +1287,46 @@ namespace Broadsheet
                 relayTile.Value = manual.Length == 0 ? "Automatic" : manual;
                 relayTile.Hint = !relay.Known ? "Looking for it on the network…" : manual.Length == 0 ? "Found by itself: " + relay.Where : "Set by hand";
             }
+        }
+
+        void FillUpdateTile()
+        {
+            if (updateTile == null) return;
+            UpdateState st = Updater.State;
+            if (st == UpdateState.Ready)
+            {
+                updateTile.Enabled = true;
+                updateTile.Label = "Restart to update";
+                updateTile.Value = "v" + Updater.RemoteVersion + " ready";
+                updateTile.Hint = Updater.HintText();
+                updateTile.OnOk = () =>
+                {
+                    options.Close();
+                    Updater.ApplyPendingUpdate(true);
+                };
+            }
+            else if (st == UpdateState.Checking || st == UpdateState.Downloading)
+            {
+                updateTile.Enabled = false;
+                updateTile.Label = "Updates";
+                updateTile.Value = st == UpdateState.Downloading ? "Downloading…" : "Checking…";
+                updateTile.Hint = Updater.HintText();
+                updateTile.OnOk = null;
+            }
+            else
+            {
+                updateTile.Enabled = true;
+                updateTile.Label = "Updates";
+                updateTile.Value = "v" + Updater.CurrentVersion + (Updater.AutoUpdateEnabled ? "" : " · dev");
+                updateTile.Hint = Updater.HintText();
+                updateTile.OnOk = Updater.CheckNow;
+            }
+        }
+
+        void OnUpdateChanged()
+        {
+            if (front != null) front.UpdateNotice = Updater.BannerText;
+            FillOptions();
         }
 
         /// <summary>Read here or new again: what dims (or hides) it on the front page.</summary>

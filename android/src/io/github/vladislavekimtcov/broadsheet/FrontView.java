@@ -30,11 +30,17 @@ interface FrontView {
 
         /** Touch: pulled down to refresh, or tapped the message to try again. */
         void onRefresh();
+
+        /** Touch: tapped the update-ready banner. */
+        void onInstallUpdate();
     }
 
     boolean hasContent();
 
     void setStatus(String text);
+
+    /** Non-intrusive notice when an update is downloaded and ready to install, or null. */
+    void setUpdateNotice(String text);
 
     /** Shown instead of the page when there is nothing to show; otherwise as a note. */
     void showMessage(String text);

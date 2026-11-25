@@ -32,6 +32,7 @@ public final class CasesTest {
         dates(load(dir + "/dates.json"));
         ladder(load(dir + "/ladder.json"));
         sse(load(dir + "/sse.json"));
+        update(load(dir + "/update.json"));
         System.out.println(failures == 0 ? "all passed" : failures + " failed");
         if (failures > 0) System.exit(1);
     }
@@ -62,6 +63,18 @@ public final class CasesTest {
                         && (g.id == null ? w.get("id") == null : g.id.equals(str(w, "id")));
             }
             check(ok, "sse: " + str(c, "name"));
+        }
+    }
+
+    private static void update(Map<String, Object> u) {
+        for (Map<String, Object> c : list(u, "tag_from_location")) {
+            String got = Updates.tagFromLocation(str(c, "in"));
+            String want = str(c, "expect");
+            check(want == null ? got == null : want.equals(got), "update: tag, " + str(c, "name"));
+        }
+        for (Map<String, Object> c : list(u, "is_newer")) {
+            boolean got = Updates.isNewer(str(c, "remote"), str(c, "local"));
+            check(got == (Boolean) c.get("expect"), "update: newer, " + str(c, "name"));
         }
     }
 

@@ -182,6 +182,21 @@ namespace Broadsheet
             }
         }
 
+        static void UpdateCases(JObj u)
+        {
+            foreach (JObj c in Each(u, "tag_from_location"))
+            {
+                string got = Updates.TagFromLocation(c.Opt("in", null));
+                string want = c.IsNull("expect") ? null : c.Str("expect");
+                Check(got == want, "update: tag, " + c.Str("name"));
+            }
+            foreach (JObj c in Each(u, "is_newer"))
+            {
+                bool got = Updates.IsNewer(c.Str("remote"), c.Str("local"));
+                Check(got == c.Bool("expect"), "update: newer, " + c.Str("name"));
+            }
+        }
+
         static int Main()
         {
             // JSON
@@ -207,6 +222,7 @@ namespace Broadsheet
                 LadderCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "ladder.json"))));
                 SseCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sse.json"))));
                 SwipeCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "swipe.json"))));
+                UpdateCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "update.json"))));
             }
 
             // Stories as the relay sends them

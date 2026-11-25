@@ -43,7 +43,7 @@ import java.util.concurrent.Executors;
  * modes of the reader, options and player ({@link Ui#touch}). Everything else is shared.
  */
 public final class Main extends Activity implements FrontView.Listener, Reader.Listener, Player.Listener, Options.Listener,
-        Events.Listener {
+        Events.Listener, Updater.Listener {
     /** Seconds the relay may spend getting a story's body from Apple News before answering. */
     private static final int FETCH_WAIT = 14;
     /** With nothing on screen, look for the relay again this often. */
@@ -67,6 +67,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     private Library library;
     private Bodies bodies;
     private Events events;
+    private Updater updater;
     /** This TV's name for its interest list at the relay. */
     private String clientId;
     private final Interest interest = new Interest();
@@ -106,7 +107,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
 
     // the options panel's state
     private Story target;
-    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, relayTile;
+    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, updateTile, relayTile;
     /** The open story was marked unread: leaving it mustn't count it as read again. */
     private String keptUnread;
     /** The story on screen in the reader, or null while the front page shows. */
@@ -172,6 +173,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         library = new Library(getFilesDir());
         bodies = new Bodies(new File(getCacheDir(), "bodies"));
         events = new Events(relay, this);
+        updater = new Updater(this, prefs, this);
         clientId = prefs.getString("client", null);
         if (clientId == null) {
             clientId = (Ui.touch ? "phone-" : "tv-") + Long.toHexString(new java.security.SecureRandom().nextLong() & 0xffffffffffL);
@@ -267,6 +269,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         root.addView(reader);
         root.addView(player);
         root.addView(options);
+        if (updater != null) front.setUpdateNotice(updater.bannerText());
     }
 
     /** The text size step; 0.1's four sizes (key "size") map onto the ten of 0.2.1. A phone starts
@@ -282,6 +285,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     protected void onStart() {
         super.onStart();
         events.start();
+        updater.start();
         root.removeCallbacks(poll);
         root.postDelayed(poll, POLL_MS);
     }
@@ -290,6 +294,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     protected void onResume() {
         super.onResume();
         applyTheme();
+        updater.onResume(this);
         // The event stream says when the Mac's page changes; without it, look after ten minutes.
         if (!front.hasContent() || (!events.connected() && System.currentTimeMillis() - loadedAt > POLL_MS)) load();
     }
@@ -298,6 +303,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     protected void onStop() {
         super.onStop();
         events.stop();
+        updater.stop();
         interest.clear();
         images.cancelWarm();
         root.removeCallbacks(poll);
@@ -1044,6 +1050,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             prefs.edit().putInt("auto_refresh", i).apply();
             fillOptions();
         };
+        updateTile = new Options.Tile("↓", "Updates");  // feature: opt.update
 
         List<Options.Tile> tiles = new ArrayList<>();
         tiles.add(saveTile);
@@ -1056,6 +1063,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         tiles.add(readTile);
         if (continueTile != null) tiles.add(continueTile);
         tiles.add(refreshTile);
+        tiles.add(updateTile);
         relayTile = null;
         if (!Ui.touch) {
             // The TV: the last tile; OK opens a box with the keyboard (the phone has the field itself).
@@ -1162,6 +1170,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         refreshTile.value = loadedAt > 0 ? "Updated " + time(loadedAt) : "";
         refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
                 : "Automatically " + AUTO_REFRESH_NAMES[autoRefreshStep()] + (Ui.touch ? "  ·  ‹ › how often" : "  ·  ◀ ▶");
+        fillUpdateTile();
         if (relayTile != null) {
             String manual = relay.manualUrl().replaceFirst("^https?://", "");
             relayTile.value = manual.isEmpty() ? "Automatic" : manual;
@@ -1172,6 +1181,33 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             refreshTile.value = new String[] {"25 min", "Hourly", "Off"}[autoRefreshStep()];
             refreshTile.hint = refreshing ? "Refreshing Apple News on the Mac…"
                     : (loadedAt > 0 ? "Updated " + time(loadedAt) + "  ·  " : "") + "Tap refreshes now";
+        }
+    }
+
+    private void fillUpdateTile() {
+        if (updateTile == null) return;
+        Updater.State st = updater.state();
+        if (st == Updater.State.READY) {
+            updateTile.enabled = true;
+            updateTile.label = "Install update v" + updater.remoteVersion();
+            updateTile.value = "Ready";
+            updateTile.hint = updater.hintText();
+            updateTile.onOk = () -> {
+                options.close();
+                updater.install(this);
+            };
+        } else if (st == Updater.State.CHECKING || st == Updater.State.DOWNLOADING) {
+            updateTile.enabled = false;
+            updateTile.label = "Updates";
+            updateTile.value = st == Updater.State.DOWNLOADING ? "Downloading…" : "Checking…";
+            updateTile.hint = updater.hintText();
+            updateTile.onOk = null;
+        } else {
+            updateTile.enabled = true;
+            updateTile.label = "Updates";
+            updateTile.value = "v" + updater.currentVersion() + (BuildConfig.AUTO_UPDATE ? "" : " · dev");
+            updateTile.hint = updater.hintText();
+            updateTile.onOk = () -> updater.check(true);
         }
     }
 
@@ -1395,6 +1431,17 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         if (!front.hasContent()) showMessage("Looking for Apple News Relay on your network…");
         load();
         if (relay.known()) refreshNow();
+    }
+
+    @Override
+    public void onInstallUpdate() {
+        updater.install(this);
+    }
+
+    @Override
+    public void onUpdateChanged() {
+        if (front != null) front.setUpdateNotice(updater.bannerText());
+        fillOptions();
     }
 
     /** Touch: the relay's address, as relay.conf would hold it; empty finds it by itself. */

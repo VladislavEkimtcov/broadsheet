@@ -59,7 +59,16 @@ fi
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/broadsheet.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/gen" "$WORK/classes" build
+mkdir -p "$WORK/gen/io/github/vladislavekimtcov/broadsheet" "$WORK/classes" build
+AUTO_UPDATE_BOOL=false
+[[ ${AUTO_UPDATE:-0} == 1 ]] && AUTO_UPDATE_BOOL=true
+cat > "$WORK/gen/io/github/vladislavekimtcov/broadsheet/BuildConfig.java" <<EOF
+package io.github.vladislavekimtcov.broadsheet;
+
+public final class BuildConfig {
+    public static final boolean AUTO_UPDATE = $AUTO_UPDATE_BOOL;
+}
+EOF
 
 ASSET_ARGS=()
 [[ -d $REPO/assets ]] && ASSET_ARGS=(-A "$REPO/assets")

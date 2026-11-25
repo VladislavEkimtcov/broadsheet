@@ -1,0 +1,100 @@
+{
+  "tag_from_location": [
+    {
+      "name": "full HTTPS release tag URL",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases/tag/v0.6.0",
+      "expect": "0.6.0"
+    },
+    {
+      "name": "relative redirect location",
+      "in": "/VladislavEkimtcov/broadsheet/releases/tag/v1.2.3",
+      "expect": "1.2.3"
+    },
+    {
+      "name": "uppercase V, trailing slash and query",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases/tag/V0.6.1/?ref=latest",
+      "expect": "0.6.1"
+    },
+    {
+      "name": "tag without v prefix",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases/tag/0.7.0",
+      "expect": "0.7.0"
+    },
+    {
+      "name": "two-part version tag",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases/tag/v1.2",
+      "expect": "1.2"
+    },
+    {
+      "name": "pre-release tag is ignored",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases/tag/v0.6.0-rc1",
+      "expect": null
+    },
+    {
+      "name": "non-tag releases URL returns null",
+      "in": "https://github.com/VladislavEkimtcov/broadsheet/releases",
+      "expect": null
+    },
+    {
+      "name": "empty or null location",
+      "in": "",
+      "expect": null
+    }
+  ],
+  "is_newer": [
+    {
+      "name": "minor bump",
+      "remote": "0.6.0",
+      "local": "0.5.0",
+      "expect": true
+    },
+    {
+      "name": "patch bump",
+      "remote": "0.5.1",
+      "local": "0.5.0",
+      "expect": true
+    },
+    {
+      "name": "numeric comparison across two digits",
+      "remote": "0.10.0",
+      "local": "0.9.0",
+      "expect": true
+    },
+    {
+      "name": "major bump with short remote",
+      "remote": "1.0",
+      "local": "0.9.9",
+      "expect": true
+    },
+    {
+      "name": "same version",
+      "remote": "0.5.0",
+      "local": "0.5.0",
+      "expect": false
+    },
+    {
+      "name": "four-part AssemblyVersion vs three-part tag",
+      "remote": "0.5.0",
+      "local": "0.5.0.0",
+      "expect": false
+    },
+    {
+      "name": "older version",
+      "remote": "0.4.9",
+      "local": "0.5.0",
+      "expect": false
+    },
+    {
+      "name": "leading v tolerated",
+      "remote": "v0.6.0",
+      "local": "v0.5.0",
+      "expect": true
+    },
+    {
+      "name": "invalid remote returns false",
+      "remote": "0.6.0-beta",
+      "local": "0.5.0",
+      "expect": false
+    }
+  ]
+}

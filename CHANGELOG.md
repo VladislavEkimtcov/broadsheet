@@ -5,7 +5,7 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
-## Unreleased
+## 0.5.0
 
 - Windows: two-finger swipes on a precision touchpad, read the way Chrome reads them, and
   animated under your fingers. Fingers from the right of the pad to the left go back, as

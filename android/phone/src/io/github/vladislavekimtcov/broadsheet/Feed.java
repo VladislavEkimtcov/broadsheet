@@ -1,5 +1,8 @@
 package io.github.vladislavekimtcov.broadsheet;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -7,9 +10,11 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
@@ -19,13 +24,17 @@ import android.widget.TextView;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * The phone's front page: a masthead with ☰, the sections as a strip along the top (the TV's
- * rail turned on its side, with the same square highlight), and the chosen section in one
- * column: hero, briefs, picture cards; two columns where the screen is wide (landscape, tablets).
- * Pull down to refresh; a tap opens a story, a long press opens the options for it.
+ * rail turned on its side, with the same square highlight), and a controllable horizontal gallery
+ * pager over the sections: hero, briefs, picture cards; two columns where the screen is wide
+ * (landscape, tablets). Swiping sideways slides 1:1 between categories under the finger, pull down
+ * refreshes, a tap opens a story, a long press opens the options for it.
  *
  * <p>Cheap like the TV's page: one view per card (the shared {@link Card}, drawn square),
  * pictures decoded at the size shown and dropped when far off screen, nothing moving at rest.
@@ -45,16 +54,12 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     private final HorizontalScrollView stripScroll;
     private final LinearLayout strip;
     private final Pull pull;
-    private final Scroll list;
-    private final LinearLayout page;
+    private final Pager pager;
     private final TextView message;
-    private final java.util.List<Tab> tabs = new ArrayList<>();
-    private final java.util.List<Card> cards = new ArrayList<>();
-    private java.util.List<Relay.Section> sections = new ArrayList<>();
-    private int current = -1, chosenAt = -1, built;
-    private LinearLayout lastRow;
-    private int lastRowCount;
-    private TextView sub, status, more, banner, updateBanner;
+    private final List<Tab> tabs = new ArrayList<>();
+    private final Map<String, Integer> scrollMemory = new HashMap<>();
+    private List<Relay.Section> sections = new ArrayList<>();
+    private int current = -1, chosenAt = -1;
     private String statusText = "", bannerText, updateNotice;
     private Story chosen;
     private int lastWidth;
@@ -119,13 +124,8 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         whole.addView(top, new LinearLayout.LayoutParams(-1, -2));
 
         pull = new Pull(c);
-        list = new Scroll(c);
-        page = new LinearLayout(c);
-        page.setOrientation(LinearLayout.VERTICAL);
-        FrameLayout holder = new FrameLayout(c);
-        holder.addView(page, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_HORIZONTAL));
-        list.addView(holder, new ViewGroup.LayoutParams(-1, -2));
-        pull.addView(list, new LayoutParams(-1, -1));
+        pager = new Pager(c);
+        pull.addView(pager, new LayoutParams(-1, -1));
         whole.addView(pull, new LinearLayout.LayoutParams(-1, 0, 1));
 
         message = Ui.text(c, 18, Ui.MUTED, Ui.text);
@@ -145,7 +145,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
 
     /** The card nearest the top of the screen, once the page has stopped: what the reader looks at. */
     private void restOnCard() {  // feature: reader.prefetch
-        Card c = firstOnScreen();
+        Card c = pager.curr != null ? pager.curr.firstOnScreen() : null;
         if (c != null) listener.onFocusStory(c.story, c.index);
     }
 
@@ -183,7 +183,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     @Override
     public void applyInsets() {  // feature: phone.insets
         top.setPadding(0, Ui.insetTop, 0, 0);
-        page.setPadding(0, Ui.dp(18), 0, Ui.dp(28) + Ui.insetBottom);
+        pager.applyInsets();
         message.setPadding(Ui.dp(28), 0, Ui.dp(28), Ui.insetBottom);
         relayoutPage();
     }
@@ -191,7 +191,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     // ------------------------------------------------------------ sizes
 
     private int viewWidth() {
-        int w = list.getWidth() > 0 ? list.getWidth() : getWidth();
+        int w = pager.getWidth() > 0 ? pager.getWidth() : getWidth();
         return w > 0 ? w : getResources().getDisplayMetrics().widthPixels - Ui.insetLeft - Ui.insetRight;
     }
 
@@ -231,7 +231,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     @Override
     public void setStatus(String text) {
         statusText = text == null ? "" : text;
-        if (status != null && !TextUtils.equals(status.getText(), statusText)) status.setText(statusText);
+        pager.updateStatus();
         if (statusText.startsWith("Updated")) setBanner(null);  // the Mac answered
     }
 
@@ -243,13 +243,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     @Override
     public void setUpdateNotice(String text) {  // feature: opt.update
         updateNotice = text;
-        applyUpdateBanner();
-    }
-
-    private void applyUpdateBanner() {
-        if (updateBanner == null) return;
-        updateBanner.setText(updateNotice);
-        updateBanner.setVisibility(updateNotice == null || updateNotice.isEmpty() ? GONE : VISIBLE);
+        pager.updateNotice();
     }
 
     @Override
@@ -265,21 +259,19 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     /** A plain note above the section: the Mac isn't answering, say. A tap tries again. */
     private void setBanner(String text) {
         bannerText = text;
-        if (banner == null) return;
-        banner.setText(text);
-        banner.setVisibility(text == null ? GONE : VISIBLE);
+        pager.updateBanner();
     }
 
     @Override
-    public void setSections(java.util.List<Relay.Section> list, boolean keepFocus) {
+    public void setSections(List<Relay.Section> list, boolean keepFocus) {
         String id = currentSection() != null ? currentSection().id : null;
         restore(list, id, null, false, keepFocus);
     }
 
     @Override
-    public void restore(java.util.List<Relay.Section> list, String currentId, String focusedStory, boolean railFocused, boolean keepFocus) {
+    public void restore(List<Relay.Section> list, String currentId, String focusedStory, boolean railFocused, boolean keepFocus) {
         boolean same = currentSection() != null && currentSection().id.equals(currentId);
-        final int y = this.list.getScrollY();
+        int y = same && pager.curr != null ? pager.curr.getScrollY() : 0;
         sections = list;
         message.setVisibility(GONE);
         bannerText = null;
@@ -293,9 +285,13 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             if (list.get(i).id.equals(currentId)) keep = i;
         }
         current = -1;
+        pager.reset();
         if (list.isEmpty()) return;
         show(keep);
-        if (keepFocus && same) this.list.post(() -> this.list.scrollTo(0, y));  // a live reload: stay put
+        if (keepFocus && same && pager.curr != null) {
+            final PageView target = pager.curr;
+            target.post(() -> target.scrollTo(0, y));  // a live reload: stay put
+        }
     }
 
     @Override
@@ -321,7 +317,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
 
     @Override
     public void refreshDim() {
-        for (Card c : cards) c.setDim(listener.isDimmed(c.story.id));
+        pager.refreshDim();
     }
 
     @Override
@@ -332,37 +328,50 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     /** Back from the reader: the story that was open is on screen (it may have moved with a swipe). */
     @Override
     public void focusStory(int index) {
-        for (final Card c : cards) {
-            if (c.index != index) continue;
-            list.post(() -> {
-                int y = topIn(c), h = list.getHeight();
-                if (y < list.getScrollY() || y + c.getHeight() > list.getScrollY() + h) list.scrollTo(0, Math.max(0, y - Ui.dp(12)));
-            });
-            return;
-        }
+        if (pager.curr != null) pager.curr.focusStory(index);
     }
 
-    // ------------------------------------------------------------ building
+    @Override
+    public void append(Relay.Section s) {  // feature: front.deep
+        pager.append(s);
+    }
+
+    // ------------------------------------------------------------ building & paging
 
     /** A tap on the strip. */
     private void choose(int index) {  // feature: front.warm
-        if (index == current) {
-            list.smoothScrollTo(0, 0);
+        if (index < 0 || index >= sections.size()) return;
+        if (index == current && pager.curr != null) {
+            pager.curr.smoothScrollTo(0, 0);
             return;
         }
+        if (current >= 0) {
+            pager.animateTo(index);
+            return;
+        }
+        onSectionSelected(index);
+        show(index);
+    }
+
+    private void onSectionSelected(int index) {
+        if (index < 0 || index >= sections.size()) return;
         listener.onRailFocus(index, chosenAt < 0 ? 0 : Integer.signum(index - chosenAt));
         chosenAt = index;
         removeCallbacks(rest);
         postDelayed(rest, REST_MS);
-        show(index);
-        list.scrollTo(0, 0);
     }
 
     private void show(int index) {  // feature: phone.strip
         if (index < 0 || index >= sections.size()) return;
         current = index;
         if (chosenAt < 0) chosenAt = index;
+        syncStrip(index);
+        pager.bindWindow(index);
+    }
+
+    private void syncStrip(int index) {
         for (Tab t : tabs) t.setChosen(t.index == index);
+        if (index < 0 || index >= tabs.size()) return;
         final Tab tab = tabs.get(index);
         stripScroll.post(() -> {
             int x = stripScroll.getScrollX(), w = stripScroll.getWidth();
@@ -370,136 +379,15 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
                 stripScroll.smoothScrollTo(Math.max(0, tab.getLeft() - Ui.dp(32)), 0);
             }
         });
-        build();
     }
 
-    /** Lays out the current section again (a rotation: one column or two), keeping the place. */
+    /** Lays out the current and adjacent sections again (e.g. rotation), keeping the place. */
     private void relayoutPage() {
-        if (currentSection() == null) return;
-        Card anchor = firstOnScreen();
+        if (currentSection() == null || pager.curr == null) return;
+        Card anchor = pager.curr.firstOnScreen();
         final int index = anchor != null ? anchor.index : -1;
-        build();
+        pager.bindWindow(current);
         if (index > 0) focusStory(index);
-    }
-
-    private void build() {
-        for (Card c : cards) images.cancel(c);
-        cards.clear();
-        page.removeAllViews();
-        Relay.Section s = currentSection();
-        if (s == null) return;
-        Context c = getContext();
-        long now = System.currentTimeMillis();
-        lastWidth = viewWidth();
-        int cw = contentWidth(), n = columns(), gap = Ui.dp(GAP_DP), tile = tileWidth();
-        int tileH = tile * 9 / 16 + Ui.dp(96);
-
-        updateBanner = Ui.text(c, 14, Ui.INK, Ui.sansMedium);
-        updateBanner.setLineSpacing(0, 1.25f);
-        updateBanner.setPadding(Ui.dp(14), Ui.dp(10), Ui.dp(12), Ui.dp(10));
-        updateBanner.setBackground(new RailBlock());
-        updateBanner.setOnClickListener(v -> listener.onInstallUpdate());
-        page.addView(updateBanner, block(cw, 0, Ui.dp(12)));
-        applyUpdateBanner();
-
-        banner = Ui.text(c, 14, Ui.INK, Ui.sans);
-        banner.setLineSpacing(0, 1.25f);
-        banner.setPadding(Ui.dp(14), Ui.dp(10), Ui.dp(12), Ui.dp(10));
-        banner.setBackground(new RailBlock());
-        banner.setOnClickListener(v -> listener.onRefresh());
-        page.addView(banner, block(cw, 0, Ui.dp(16)));
-        setBanner(bannerText);
-
-        TextView title = Ui.text(c, 26, Ui.INK, Ui.display);
-        title.setText(s.title);
-        page.addView(title, block(cw, 0, 0));
-        sub = Ui.text(c, 12.5f, Ui.FAINT, Ui.sansMedium);
-        sub.setText(subText(s));
-        page.addView(sub, block(cw, Ui.dp(5), Ui.dp(14)));
-
-        java.util.List<Story> stories = s.stories;
-        int i = 0;
-        lastRow = null;
-        lastRowCount = n;
-        if (stories.size() >= 3) {
-            page.addView(card(Card.HERO, stories.get(0), 0, now), block(cw, 0, 0, heroHeight()));
-            int briefH = Ui.dp(n == 1 ? 132 : 150);
-            if (n == 1) {
-                page.addView(card(Card.BRIEF, stories.get(1), 1, now), block(cw, gap, 0, briefH));
-                page.addView(card(Card.BRIEF, stories.get(2), 2, now), block(cw, gap, 0, briefH));
-            } else {
-                LinearLayout row = row(c);
-                row.addView(card(Card.BRIEF, stories.get(1), 1, now), new LinearLayout.LayoutParams(tile, briefH));
-                LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(tile, briefH);
-                second.leftMargin = gap;
-                row.addView(card(Card.BRIEF, stories.get(2), 2, now), second);
-                page.addView(row, block(cw, gap, 0));
-            }
-            i = 3;
-        }
-        for (; i < stories.size(); i++) addTile(stories.get(i), i, now, tile, tileH);
-        built = stories.size();
-
-        more = Ui.text(c, 13, Ui.FAINT, Ui.sansMedium);
-        more.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.addView(more, block(cw, Ui.dp(18), 0));
-        status = Ui.text(c, 11.5f, Ui.FAINT, Ui.sans);
-        status.setLineSpacing(0, 1.25f);
-        status.setText(statusText);
-        page.addView(status, block(cw, Ui.dp(18), 0));
-        updateMore(s);
-        list.post(this::onViewport);
-    }
-
-    private void addTile(Story st, int index, long now, int tile, int tileH) {
-        int n = columns(), gap = Ui.dp(GAP_DP);
-        if (lastRow == null || lastRowCount >= n) {
-            lastRow = row(getContext());
-            lastRowCount = 0;
-            int at = more != null ? page.indexOfChild(more) : -1;
-            if (at >= 0) page.addView(lastRow, at, block(contentWidth(), gap, 0));
-            else page.addView(lastRow, block(contentWidth(), gap, 0));
-        }
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tile, tileH);
-        if (lastRowCount > 0) lp.leftMargin = gap;
-        lastRow.addView(card(Card.TILE, st, index, now), lp);
-        lastRowCount++;
-    }
-
-    @Override
-    public void append(Relay.Section s) {  // feature: front.deep
-        if (currentSection() != s || built >= s.stories.size()) return;
-        long now = System.currentTimeMillis();
-        int tile = tileWidth(), tileH = tile * 9 / 16 + Ui.dp(96);
-        for (int j = built; j < s.stories.size(); j++) addTile(s.stories.get(j), j, now, tile, tileH);
-        built = s.stories.size();
-        if (sub != null) sub.setText(subText(s));
-        updateMore(s);
-        list.post(this::onViewport);
-    }
-
-    private void updateMore(Relay.Section s) {
-        if (more == null) return;
-        more.setText(s.next != null ? "More stories on their way…" : "");
-        more.setVisibility(s.next != null ? VISIBLE : GONE);
-    }
-
-    private Card card(int style, Story s, int index, long now) {
-        final Card card = new Card(getContext(), style, images);
-        card.setFocusable(false);
-        card.bind(s, index, now);
-        card.setDim(listener.isDimmed(s.id));
-        card.setOnClickListener(v -> {
-            Relay.Section sec = currentSection();
-            if (sec != null) listener.onOpen(sec, card.index);
-        });
-        card.setOnLongClickListener(v -> {  // feature: phone.long_press
-            chosen = card.story;
-            listener.onMenu();
-            return true;
-        });
-        cards.add(card);
-        return card;
     }
 
     private static String subText(Relay.Section s) {
@@ -530,41 +418,6 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         return lp;
     }
 
-    /** A view's top within the scrolling page. */
-    private int topIn(View v) {
-        int y = 0;
-        for (View p = v; p != null && p != list; p = (View) p.getParent()) {
-            y += p.getTop();
-            if (!(p.getParent() instanceof View)) break;
-        }
-        return y;
-    }
-
-    private Card firstOnScreen() {
-        int y = list.getScrollY();
-        for (Card c : cards) {
-            if (c.getHeight() == 0) continue;
-            int t = topIn(c);
-            if (t + c.getHeight() / 2 >= y) return c;
-        }
-        return null;
-    }
-
-    /** Pictures for the cards within a screen of the viewport; the next page near the end. */
-    private void onViewport() {
-        int y = list.getScrollY(), h = list.getHeight();
-        if (h == 0) return;
-        for (Card c : cards) {
-            int t = topIn(c);
-            c.setNear(t + c.getHeight() > y - h && t < y + h * 2);
-        }
-        Relay.Section s = currentSection();
-        View content = list.getChildAt(0);
-        if (s != null && s.next != null && content != null && content.getHeight() - (y + h) < h * 2) listener.onNearEnd(s);
-        removeCallbacks(cardRest);
-        postDelayed(cardRest, CARD_REST_MS);
-    }
-
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         super.onSizeChanged(w, h, ow, oh);
@@ -575,16 +428,538 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         });
     }
 
-    // ------------------------------------------------------------ views
+    // ------------------------------------------------------------ pager & page views
 
-    /** The scrolling page; reports where it is. */
-    private final class Scroll extends ScrollView {
-        Scroll(Context c) {
+    /**
+     * Controllable photo-gallery pager across categories: keeps three {@link PageView} slots
+     * (previous, current, next) positioned side by side, tracks horizontal drags 1:1 with edge
+     * damping, and lets the user catch a settling animation mid-glide.
+     */
+    private final class Pager extends FrameLayout {  // feature: phone.strip
+        private final int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+        private final PageView[] pool = new PageView[3];
+        PageView prev, curr, next;
+        private float downX, downY, dragX;
+        private boolean dragging, settling;
+        private VelocityTracker velocity;
+        private ValueAnimator anim;
+
+        Pager(Context c) {
+            super(c);
+            for (int i = 0; i < 3; i++) {
+                pool[i] = new PageView(c);
+                addView(pool[i], new LayoutParams(-1, -1));
+            }
+            prev = pool[0];
+            curr = pool[1];
+            next = pool[2];
+            applyInsets();
+        }
+
+        void applyInsets() {
+            for (PageView p : pool) p.applyInsets();
+        }
+
+        void reset() {
+            cancelAnim();
+            dragX = 0;
+            for (PageView p : pool) p.clear();
+            positionSlots(0);
+        }
+
+        void bindWindow(int index) {
+            cancelAnim();
+            dragX = 0;
+            prev.bind(index - 1);
+            curr.bind(index);
+            next.bind(index + 1);
+            int y = curr.section != null && scrollMemory.containsKey(curr.section.id) ? scrollMemory.get(curr.section.id) : 0;
+            final PageView cPage = curr;
+            cPage.post(() -> cPage.scrollTo(0, y));
+            positionSlots(0);
+        }
+
+        void updateStatus() {
+            for (PageView p : pool) p.updateStatus();
+        }
+
+        void updateNotice() {
+            for (PageView p : pool) p.applyUpdateBanner();
+        }
+
+        void updateBanner() {
+            for (PageView p : pool) p.applyBanner();
+        }
+
+        void refreshDim() {
+            for (PageView p : pool) p.refreshDim();
+        }
+
+        void append(Relay.Section s) {
+            for (PageView p : pool) {
+                if (p.section == s) p.append(s);
+            }
+        }
+
+        boolean canPull() {
+            return !dragging && !settling && curr != null && curr.getScrollY() == 0;
+        }
+
+        boolean isDragging() {
+            return dragging;
+        }
+
+        private int pageW() {
+            return getWidth() > 0 ? getWidth() : viewWidth();
+        }
+
+        private void positionSlots(float offset) {
+            int w = pageW();
+            dragX = offset;
+            if (prev != null) {
+                prev.setVisibility(prev.section != null && offset > 0 ? VISIBLE : INVISIBLE);
+                prev.setTranslationX(offset - w);
+            }
+            if (curr != null) {
+                curr.setVisibility(curr.section != null ? VISIBLE : INVISIBLE);
+                curr.setTranslationX(offset);
+            }
+            if (next != null) {
+                next.setVisibility(next.section != null && offset < 0 ? VISIBLE : INVISIBLE);
+                next.setTranslationX(offset + w);
+            }
+        }
+
+        private float damp(float raw) {
+            if (raw > 0 && current <= 0) return raw * 0.25f;
+            if (raw < 0 && current >= sections.size() - 1) return raw * 0.25f;
+            return raw;
+        }
+
+        private void cancelAnim() {
+            if (anim != null) {
+                anim.cancel();
+                anim = null;
+            }
+            settling = false;
+        }
+
+        void animateTo(final int target) {
+            if (target == current || target < 0 || target >= sections.size()) return;
+            int delta = target - current;
+            if (Math.abs(delta) == 1) {
+                cancelAnim();
+                settle(delta, 0);
+                return;
+            }
+            // Multi-tab jump: bind the destination into the incoming slot and slide cleanly across.
+            cancelAnim();
+            dragX = 0;
+            final int dir = Integer.signum(delta);
+            final PageView incoming = dir > 0 ? next : prev;
+            incoming.bind(target);
+            int w = pageW();
+            incoming.setTranslationX(dir * w);
+            incoming.setVisibility(VISIBLE);
+            settling = true;
+            anim = ValueAnimator.ofFloat(0f, -dir * w);
+            anim.setDuration(240);
+            anim.setInterpolator(new DecelerateInterpolator(2f));
+            anim.addUpdateListener(a -> {
+                float x = (Float) a.getAnimatedValue();
+                dragX = x;
+                curr.setTranslationX(x);
+                incoming.setTranslationX(x + dir * w);
+            });
+            anim.addListener(new AnimatorListenerAdapter() {
+                private boolean cancelled;
+
+                @Override
+                public void onAnimationCancel(Animator animation) {
+                    cancelled = true;
+                }
+
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    anim = null;
+                    settling = false;
+                    if (cancelled) return;
+                    if (curr.section != null) scrollMemory.put(curr.section.id, curr.getScrollY());
+                    PageView oldCurr = curr;
+                    curr = incoming;
+                    if (dir > 0) {
+                        next = prev;
+                        prev = oldCurr;
+                    } else {
+                        prev = next;
+                        next = oldCurr;
+                    }
+                    current = target;
+                    onSectionSelected(target);
+                    syncStrip(target);
+                    prev.bind(target - 1);
+                    next.bind(target + 1);
+                    positionSlots(0);
+                    curr.onViewport();
+                }
+            });
+            anim.start();
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent e) {
+            if (sections.isEmpty()) return false;
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = e.getX();
+                    downY = e.getY();
+                    if (settling) {
+                        // Catch a settling gallery page mid-glide, keeping its current offset.
+                        cancelAnim();
+                        downX -= dragX;
+                        dragging = true;
+                        if (velocity == null) velocity = VelocityTracker.obtain();
+                        velocity.clear();
+                        velocity.addMovement(e);
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
+                    dragging = false;
+                    if (velocity != null) velocity.clear();
+                    break;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = e.getX() - downX, dy = e.getY() - downY;
+                    if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.25f) {
+                        dragging = true;
+                        downX = e.getX() - (dx > 0 ? slop : -slop);
+                        if (velocity == null) velocity = VelocityTracker.obtain();
+                        velocity.clear();
+                        velocity.addMovement(e);
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            if (sections.isEmpty()) return false;
+            if (velocity == null) velocity = VelocityTracker.obtain();
+            velocity.addMovement(e);
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    return true;
+                case MotionEvent.ACTION_MOVE: {
+                    float dx = damp(e.getX() - downX);
+                    positionSlots(dx);
+                    return true;
+                }
+                case MotionEvent.ACTION_UP: {
+                    velocity.computeCurrentVelocity(1000);
+                    float vx = velocity.getXVelocity();
+                    dragging = false;
+                    int w = pageW();
+                    int delta = 0;
+                    if (dragX < -w * 0.28f || (vx < -Ui.dp(500) && dragX < -slop)) {
+                        if (current + 1 < sections.size()) delta = 1;
+                    } else if (dragX > w * 0.28f || (vx > Ui.dp(500) && dragX > slop)) {
+                        if (current - 1 >= 0) delta = -1;
+                    }
+                    settle(delta, vx);
+                    return true;
+                }
+                case MotionEvent.ACTION_CANCEL:
+                    dragging = false;
+                    settle(0, 0);
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private void settle(final int delta, float vx) {
+            cancelAnim();
+            int w = pageW();
+            float start = dragX;
+            float end = -delta * w;
+            float dist = Math.abs(end - start);
+            long dur = w > 0 ? Math.max(120L, Math.min(240L, Math.round(220f * dist / w))) : 180L;
+            if (Math.abs(vx) > Ui.dp(900) && dist > 0) dur = Math.min(dur, 170L);
+            settling = true;
+            anim = ValueAnimator.ofFloat(start, end);
+            anim.setDuration(dur);
+            anim.setInterpolator(new DecelerateInterpolator(2f));
+            anim.addUpdateListener(a -> positionSlots((Float) a.getAnimatedValue()));
+            anim.addListener(new AnimatorListenerAdapter() {
+                private boolean cancelled;
+
+                @Override
+                public void onAnimationCancel(Animator animation) {
+                    cancelled = true;
+                }
+
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    anim = null;
+                    settling = false;
+                    if (cancelled) return;
+                    if (delta != 0) commitShift(delta);
+                    else positionSlots(0);
+                }
+            });
+            anim.start();
+        }
+
+        private void commitShift(int delta) {
+            if (curr.section != null) scrollMemory.put(curr.section.id, curr.getScrollY());
+            if (delta > 0) {
+                PageView recycled = prev;
+                prev = curr;
+                curr = next;
+                next = recycled;
+            } else {
+                PageView recycled = next;
+                next = curr;
+                curr = prev;
+                prev = recycled;
+            }
+            current += delta;
+            onSectionSelected(current);
+            syncStrip(current);
+            if (delta > 0) next.bind(current + 1);
+            else prev.bind(current - 1);
+            positionSlots(0);
+            curr.onViewport();
+        }
+    }
+
+    /** One scrollable section page (reused across the 3 pager slots). */
+    private final class PageView extends ScrollView {
+        private final LinearLayout page;
+        private final List<Card> cards = new ArrayList<>();
+        Relay.Section section;
+        private int built;
+        private LinearLayout lastRow;
+        private int lastRowCount;
+        private TextView sub, status, more, banner, updateBanner;
+
+        PageView(Context c) {
             super(c);
             setVerticalScrollBarEnabled(true);
             setOverScrollMode(OVER_SCROLL_NEVER);
             setBackgroundColor(Ui.PAPER);
             setFillViewport(true);
+            page = new LinearLayout(c);
+            page.setOrientation(LinearLayout.VERTICAL);
+            FrameLayout holder = new FrameLayout(c);
+            holder.addView(page, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_HORIZONTAL));
+            addView(holder, new ViewGroup.LayoutParams(-1, -2));
+            applyInsets();
+        }
+
+        void applyInsets() {
+            page.setPadding(0, Ui.dp(18), 0, Ui.dp(28) + Ui.insetBottom);
+        }
+
+        void clear() {
+            for (Card c : cards) images.cancel(c);
+            cards.clear();
+            page.removeAllViews();
+            section = null;
+            built = 0;
+            lastRow = null;
+            lastRowCount = 0;
+            sub = status = more = banner = updateBanner = null;
+        }
+
+        void bind(int index) {
+            clear();
+            if (index < 0 || index >= sections.size()) return;
+            Relay.Section s = sections.get(index);
+            section = s;
+            Context c = getContext();
+            long now = System.currentTimeMillis();
+            lastWidth = viewWidth();
+            int cw = contentWidth(), n = columns(), gap = Ui.dp(GAP_DP), tile = tileWidth();
+            int tileH = tile * 9 / 16 + Ui.dp(96);
+
+            updateBanner = Ui.text(c, 14, Ui.INK, Ui.sansMedium);
+            updateBanner.setLineSpacing(0, 1.25f);
+            updateBanner.setPadding(Ui.dp(14), Ui.dp(10), Ui.dp(12), Ui.dp(10));
+            updateBanner.setBackground(new RailBlock());
+            updateBanner.setOnClickListener(v -> listener.onInstallUpdate());
+            page.addView(updateBanner, block(cw, 0, Ui.dp(12)));
+            applyUpdateBanner();
+
+            banner = Ui.text(c, 14, Ui.INK, Ui.sans);
+            banner.setLineSpacing(0, 1.25f);
+            banner.setPadding(Ui.dp(14), Ui.dp(10), Ui.dp(12), Ui.dp(10));
+            banner.setBackground(new RailBlock());
+            banner.setOnClickListener(v -> listener.onRefresh());
+            page.addView(banner, block(cw, 0, Ui.dp(16)));
+            applyBanner();
+
+            TextView title = Ui.text(c, 26, Ui.INK, Ui.display);
+            title.setText(s.title);
+            page.addView(title, block(cw, 0, 0));
+            sub = Ui.text(c, 12.5f, Ui.FAINT, Ui.sansMedium);
+            sub.setText(subText(s));
+            page.addView(sub, block(cw, Ui.dp(5), Ui.dp(14)));
+
+            List<Story> stories = s.stories;
+            int i = 0;
+            lastRow = null;
+            lastRowCount = n;
+            if (stories.size() >= 3) {
+                page.addView(card(Card.HERO, stories.get(0), 0, now), block(cw, 0, 0, heroHeight()));
+                int briefH = Ui.dp(n == 1 ? 132 : 150);
+                if (n == 1) {
+                    page.addView(card(Card.BRIEF, stories.get(1), 1, now), block(cw, gap, 0, briefH));
+                    page.addView(card(Card.BRIEF, stories.get(2), 2, now), block(cw, gap, 0, briefH));
+                } else {
+                    LinearLayout row = row(c);
+                    row.addView(card(Card.BRIEF, stories.get(1), 1, now), new LinearLayout.LayoutParams(tile, briefH));
+                    LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(tile, briefH);
+                    second.leftMargin = gap;
+                    row.addView(card(Card.BRIEF, stories.get(2), 2, now), second);
+                    page.addView(row, block(cw, gap, 0));
+                }
+                i = 3;
+            }
+            for (; i < stories.size(); i++) addTile(stories.get(i), i, now, tile, tileH);
+            built = stories.size();
+
+            more = Ui.text(c, 13, Ui.FAINT, Ui.sansMedium);
+            more.setGravity(Gravity.CENTER_HORIZONTAL);
+            page.addView(more, block(cw, Ui.dp(18), 0));
+            status = Ui.text(c, 11.5f, Ui.FAINT, Ui.sans);
+            status.setLineSpacing(0, 1.25f);
+            status.setText(statusText);
+            page.addView(status, block(cw, Ui.dp(18), 0));
+            updateMore(s);
+            scrollTo(0, 0);
+            post(this::onViewport);
+        }
+
+        private void addTile(Story st, int index, long now, int tile, int tileH) {
+            int n = columns(), gap = Ui.dp(GAP_DP);
+            if (lastRow == null || lastRowCount >= n) {
+                lastRow = row(getContext());
+                lastRowCount = 0;
+                int at = more != null ? page.indexOfChild(more) : -1;
+                if (at >= 0) page.addView(lastRow, at, block(contentWidth(), gap, 0));
+                else page.addView(lastRow, block(contentWidth(), gap, 0));
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tile, tileH);
+            if (lastRowCount > 0) lp.leftMargin = gap;
+            lastRow.addView(card(Card.TILE, st, index, now), lp);
+            lastRowCount++;
+        }
+
+        private Card card(int style, Story s, int index, long now) {
+            final Card card = new Card(getContext(), style, images);
+            card.setFocusable(false);
+            card.bind(s, index, now);
+            card.setDim(listener.isDimmed(s.id));
+            card.setOnClickListener(v -> {
+                if (section != null) listener.onOpen(section, card.index);
+            });
+            card.setOnLongClickListener(v -> {  // feature: phone.long_press
+                chosen = card.story;
+                listener.onMenu();
+                return true;
+            });
+            cards.add(card);
+            return card;
+        }
+
+        void append(Relay.Section s) {  // feature: front.deep
+            if (section != s || built >= s.stories.size()) return;
+            long now = System.currentTimeMillis();
+            int tile = tileWidth(), tileH = tile * 9 / 16 + Ui.dp(96);
+            for (int j = built; j < s.stories.size(); j++) addTile(s.stories.get(j), j, now, tile, tileH);
+            built = s.stories.size();
+            if (sub != null) sub.setText(subText(s));
+            updateMore(s);
+            post(this::onViewport);
+        }
+
+        void refreshDim() {
+            for (Card c : cards) c.setDim(listener.isDimmed(c.story.id));
+        }
+
+        void updateStatus() {
+            if (status != null && !TextUtils.equals(status.getText(), statusText)) status.setText(statusText);
+        }
+
+        void applyUpdateBanner() {
+            if (updateBanner == null) return;
+            updateBanner.setText(updateNotice);
+            updateBanner.setVisibility(updateNotice == null || updateNotice.isEmpty() ? GONE : VISIBLE);
+        }
+
+        void applyBanner() {
+            if (banner == null) return;
+            banner.setText(bannerText);
+            banner.setVisibility(bannerText == null ? GONE : VISIBLE);
+        }
+
+        private void updateMore(Relay.Section s) {
+            if (more == null) return;
+            more.setText(s.next != null ? "More stories on their way…" : "");
+            more.setVisibility(s.next != null ? VISIBLE : GONE);
+        }
+
+        void focusStory(int index) {
+            for (final Card c : cards) {
+                if (c.index != index) continue;
+                post(() -> {
+                    int y = topIn(c), h = getHeight();
+                    if (y < getScrollY() || y + c.getHeight() > getScrollY() + h) scrollTo(0, Math.max(0, y - Ui.dp(12)));
+                });
+                return;
+            }
+        }
+
+        private int topIn(View v) {
+            int y = 0;
+            for (View p = v; p != null && p != this; p = (View) p.getParent()) {
+                y += p.getTop();
+                if (!(p.getParent() instanceof View)) break;
+            }
+            return y;
+        }
+
+        Card firstOnScreen() {
+            int y = getScrollY();
+            for (Card c : cards) {
+                if (c.getHeight() == 0) continue;
+                int t = topIn(c);
+                if (t + c.getHeight() / 2 >= y) return c;
+            }
+            return null;
+        }
+
+        void onViewport() {
+            int y = getScrollY(), h = getHeight();
+            if (h == 0) return;
+            for (Card c : cards) {
+                int t = topIn(c);
+                c.setNear(t + c.getHeight() > y - h && t < y + h * 2);
+            }
+            View content = getChildAt(0);
+            if (section != null && section.next != null && content != null && content.getHeight() - (y + h) < h * 2) {
+                listener.onNearEnd(section);
+            }
+            if (this == pager.curr) {
+                Feed.this.removeCallbacks(cardRest);
+                Feed.this.postDelayed(cardRest, CARD_REST_MS);
+            }
         }
 
         @Override
@@ -593,6 +968,8 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             onViewport();
         }
     }
+
+    // ------------------------------------------------------------ pull, tabs & drawables
 
     /** Pull down at the top of the page to refresh: the page follows the finger, a line fills
      *  under "Release to refresh", and letting go past it asks the Mac for a fresh Today. */
@@ -611,7 +988,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
 
         @Override
         public boolean onInterceptTouchEvent(MotionEvent e) {
-            if (sections.isEmpty()) return false;
+            if (sections.isEmpty() || !pager.canPull()) return false;
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startY = e.getY();
@@ -620,7 +997,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
                     return false;
                 case MotionEvent.ACTION_MOVE: {
                     float dy = e.getY() - startY;
-                    if (!dragging && list.getScrollY() == 0 && dy > slop && dy > Math.abs(e.getX() - startX) * 1.5f) {
+                    if (!dragging && pager.canPull() && dy > slop && dy > Math.abs(e.getX() - startX) * 1.5f) {
                         dragging = true;
                         startY = e.getY();
                         return true;
@@ -638,14 +1015,14 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_MOVE:
                     offset = Math.max(0, Math.min(full * 1.4f, (e.getY() - startY) * 0.5f));
-                    list.setTranslationY(offset);
+                    pager.setTranslationY(offset);
                     invalidate();
                     return true;
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL: {
                     boolean go = e.getActionMasked() == MotionEvent.ACTION_UP && offset >= full;
                     dragging = false;
-                    list.animate().translationY(0).setDuration(180).withEndAction(() -> {
+                    pager.animate().translationY(0).setDuration(180).withEndAction(() -> {
                         offset = 0;
                         invalidate();
                     }).start();
@@ -660,7 +1037,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         @Override
         protected void onDraw(Canvas c) {
             super.onDraw(c);
-            float shown = list.getTranslationY();
+            float shown = pager.getTranslationY();
             if (shown <= 0) return;
             float p = Math.min(1f, offset / full);
             fill.setColor(Ui.SURFACE);

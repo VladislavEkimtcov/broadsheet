@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A folded newspaper: dark page, red masthead rule, three lines of type. -->
+<!-- White Newsreader Display "B" and rule on Broadsheet red, matching windows/Broadsheet.ico. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="48dp" android:height="48dp"
-    android:viewportWidth="48" android:viewportHeight="48">
-    <path android:fillColor="#FF11100E" android:pathData="M0,0h48v48h-48z" />
-    <path android:fillColor="#FFF4EFE6" android:pathData="M10,10h28v4h-28z" />
-    <path android:fillColor="#FFE5484D" android:pathData="M10,17h12v2h-12z" />
-    <path android:fillColor="#FFB1AA9E" android:pathData="M10,23h28v2h-28zM10,28h28v2h-28zM10,33h20v2h-20z" />
+    android:viewportWidth="64" android:viewportHeight="64">
+    <path android:fillColor="#FFC4262C" android:pathData="M0,0h64v64h-64z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M21.52,10.82L24.58,8.75L34.90,8.75Q39.05,8.75 41.62,9.80Q44.20,10.85 45.39,12.69Q46.58,14.52 46.58,16.90Q46.58,20.57 43.78,22.74Q40.98,24.90 36.62,25.32L37.28,24.92Q42.85,25.32 45.92,27.85Q49.00,30.38 49.00,34.62Q49.00,37.50 47.48,39.74Q45.95,41.98 42.64,43.24Q39.33,44.50 33.95,44.50L24.60,44.50L21.95,42.42L31.50,42.42Q34.15,42.42 36.05,41.56Q37.95,40.70 38.96,38.90Q39.98,37.10 39.98,34.27Q39.98,31.98 39.15,30.21Q38.33,28.45 36.61,27.44Q34.90,26.43 32.17,26.43L21.93,26.43L21.52,24.35L32.28,24.35Q34.78,24.35 36.28,22.64Q37.78,20.92 37.78,17.50Q37.78,15.47 37.01,13.97Q36.25,12.48 34.61,11.65Q32.98,10.82 30.33,10.82ZM14.70,44.50L14.70,43.62L18.75,42.35L18.75,10.88L14.70,9.65L14.70,8.75L28.78,8.75L28.78,44.50Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M14,54h36v3h-36z" />
 </vector>

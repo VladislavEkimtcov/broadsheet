@@ -554,6 +554,7 @@ namespace Broadsheet
         {
             openSection = section;
             openIndex = index;
+            reader.ResetSlide();
             reader.Visibility = Visibility.Visible;
             Open(section.Stories[index]);
         }
@@ -878,17 +879,19 @@ namespace Broadsheet
             library.SetPosition(s, f > 0.97 ? 1 : f);
         }
 
-        public void OnMove(int delta)
+        public bool OnMove(int delta)
         {
-            if (openSection == null) return;
+            if (openSection == null) return false;
             int next = openIndex + delta;
-            if (next < 0 || next >= openSection.Stories.Count) return;
+            if (next < 0 || next >= openSection.Stories.Count) return false;
             openIndex = next;
             Open(openSection.Stories[next]);
+            return true;
         }
 
         public void OnClose()
         {
+            reader.ResetSlide();
             LeaveStory();
             reading = null;
             waitingJob = null;

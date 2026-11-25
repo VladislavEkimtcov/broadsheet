@@ -1,13 +1,16 @@
-# Builds every port and publishes them on the Releases page.
-#   git tag push vX.Y.Z (tools/release.sh does it): tests, builds, a GitHub release with
-#     broadsheet.apk, broadsheet-windows.zip and SHA256SUMS.txt (stable names, so
-#     releases/latest/download/broadsheet.apk always works) and the CHANGELOG section as notes.
+# Builds every port and publishes them on the Releases page on every push to main.
+#   push to main: tests, uses version.env if v$VERSION_NAME isn't released yet (e.g. a manual bump
+#     or tools/release.sh) or auto-bumps patch + VERSION_CODE, builds every port, tags and publishes
+#     the GitHub release (broadsheet.apk, broadsheet-windows.zip, SHA256SUMS.txt).
 #   workflow_dispatch: a dry run; the same builds, uploaded as workflow artifacts, no release.
 name: release
 on:
   push:
-    tags: ["v*"]
+    branches: ["main"]
   workflow_dispatch:
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -15,29 +18,58 @@ jobs:
     uses: ./.github/workflows/tests.yml
 
   version:
+    needs: tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       name: ${{ steps.v.outputs.name }}
       code: ${{ steps.v.outputs.code }}
+      ref: ${{ steps.v.outputs.ref }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - id: v
-        name: version.env, and the tag must match it
+        name: Resolve version (bump patch if already released)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          git fetch -q origin main --tags
           source version.env
+          REF=$GITHUB_SHA
+          if [[ $GITHUB_EVENT_NAME == push ]]; then
+            TAG_COMMIT=$(git rev-parse -q --verify "refs/tags/v$VERSION_NAME^{commit}" || true)
+            HAS_RELEASE=0
+            if gh release view "v$VERSION_NAME" >/dev/null 2>&1; then
+              HAS_RELEASE=1
+            fi
+            if [[ -n $TAG_COMMIT && ( $TAG_COMMIT != "$GITHUB_SHA" || $HAS_RELEASE -eq 1 ) ]]; then
+              IFS=. read -r maj min pat <<< "$VERSION_NAME"
+              VERSION_NAME="$maj.$min.$((pat + 1))"
+              VERSION_CODE=$((VERSION_CODE + 1))
+              sed -i.bak -e "s/^VERSION_NAME=.*/VERSION_NAME=$VERSION_NAME/" -e "s/^VERSION_CODE=.*/VERSION_CODE=$VERSION_CODE/" version.env
+              rm -f version.env.bak
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add version.env
+              git commit -q -m "Release $VERSION_NAME" -m "Parity: none"
+              git push -q origin HEAD:main
+              REF=$(git rev-parse HEAD)
+            fi
+          fi
           echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          if [[ $GITHUB_REF_TYPE == tag && $GITHUB_REF_NAME != "v$VERSION_NAME" ]]; then
-            echo "::error::tag $GITHUB_REF_NAME doesn't match VERSION_NAME=$VERSION_NAME in version.env"
-            exit 1
-          fi
-          grep -q "^## $VERSION_NAME\$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $VERSION_NAME' section"; exit 1; }
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Resolved release $VERSION_NAME ($VERSION_CODE) at $REF"
 
   android:
     needs: [tests, version]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.ref }}
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -53,7 +85,7 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           AUTO_UPDATE=1 BUILD_TOOLS=34.0.0 KEYSTORE="$RUNNER_TEMP/release.keystore" KEYPASS="$KEYPASS" android/build.sh
           rm -f "$RUNNER_TEMP/release.keystore"
-      - name: Signed with the pinned key, and the version is the tag's
+      - name: Signed with the pinned key, and the version matches
         run: |
           BT=$ANDROID_HOME/build-tools/34.0.0
           got=$("$BT/apksigner" verify --print-certs android/build/broadsheet.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
@@ -76,6 +108,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.ref }}
       - name: Build with the in-box toolchain and test
         shell: cmd
         run: windows\build.cmd test && windows\build.cmd release
@@ -97,13 +131,16 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'push'
     needs: [version, android, windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.version.outputs.ref }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -113,6 +150,15 @@ jobs:
           cat SHA256SUMS.txt
           v=${{ needs.version.outputs.name }}
           awk -v h="## $v" '$0 == h {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          if [[ ! -s notes.md ]]; then
+            awk '$0 == "## Unreleased" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notes.md
+          fi
+          if [[ ! -s notes.md ]]; then
+            prev=$(git describe --tags --abbrev=0 "${{ needs.version.outputs.ref }}^" 2>/dev/null || true)
+            if [[ -n $prev ]]; then
+              git log --no-merges --format="- %s" "$prev..${{ needs.version.outputs.ref }}" | grep -v "^- Release " > notes.md || true
+            fi
+          fi
           cat >> notes.md <<NOTES
 
           **Downloads:** \`broadsheet.apk\` for Android phones, Android TV, Fire TV and Google TV; \`broadsheet-windows.zip\` for Windows 10/11 (unzip, then \`powershell -ExecutionPolicy Bypass -File install.ps1\`). Both need [Apple News Relay](https://github.com/VladislavEkimtcov/apple-news-relay) running on a Mac on the same network.
@@ -121,5 +167,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" broadsheet.apk broadsheet-windows.zip SHA256SUMS.txt \
-            --title "Broadsheet ${{ needs.version.outputs.name }}" --notes-file notes.md --verify-tag --latest
+          v=${{ needs.version.outputs.name }}
+          tag="v$v"
+          if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git tag -a "$tag" "${{ needs.version.outputs.ref }}" -m "Broadsheet $v"
+            git push -q origin "$tag"
+          fi
+          gh release create "$tag" broadsheet.apk broadsheet-windows.zip SHA256SUMS.txt \
+            --title "Broadsheet $v" --notes-file notes.md --verify-tag --latest

@@ -24,7 +24,7 @@ namespace Broadsheet
         public interface IListener
         {
             void OnClose();
-            void OnMove(int delta);
+            bool OnMove(int delta);
             /// <summary>Enter (or a click) on a video in the story.</summary>
             void OnPlay(string stream, string title);
             /// <summary>Reading toward the end of what's loaded while the rest of the story is still to come.</summary>
@@ -41,10 +41,14 @@ namespace Broadsheet
         readonly IListener listener;
         readonly Scroller scroll = new Scroller();
         readonly StackPanel column = new StackPanel();
+        readonly Image outgoing = new Image { Stretch = Stretch.Fill, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        readonly TranslateTransform inShift = new TranslateTransform();
+        readonly TranslateTransform outShift = new TranslateTransform();
         readonly Rectangle progress = new Rectangle();
         readonly ScaleTransform progressScale = new ScaleTransform(0, 1);
         readonly List<Picture> pictures = new List<Picture>();
         readonly Ticker ticker;
+        int slideGen;
         Story story;
         Article article;
         int sizeStep = STANDARD;
@@ -59,13 +63,18 @@ namespace Broadsheet
             this.images = images;
             this.listener = listener;
             Background = Ui.Brush(Ui.PAPER);
+            ClipToBounds = true;
             column.Margin = new Thickness(0, 56, 0, 140);
             column.HorizontalAlignment = HorizontalAlignment.Center;
             column.Width = 700;
+            scroll.Background = Ui.Brush(Ui.PAPER);
             scroll.Content = column;
+            scroll.RenderTransform = inShift;
             scroll.Moved += OnScroll;
             scroll.SizeChanged += (s, e) => FitColumn();
             Children.Add(scroll);
+            outgoing.RenderTransform = outShift;
+            Children.Add(outgoing);
             progress.Fill = Ui.Brush(Ui.ACCENT);
             progress.Height = 3;
             progress.VerticalAlignment = VerticalAlignment.Top;
@@ -84,7 +93,7 @@ namespace Broadsheet
             MouseUp += (s, e) =>
             {
                 if (e.ChangedButton == MouseButton.XButton1) { listener.OnClose(); e.Handled = true; }
-                else if (e.ChangedButton == MouseButton.XButton2) { listener.OnMove(1); e.Handled = true; }
+                else if (e.ChangedButton == MouseButton.XButton2) { Move(1); e.Handled = true; }
             };
         }
 
@@ -412,7 +421,7 @@ namespace Broadsheet
                     return true;
                 case Key.Enter:
                     if (selectedVideo != null) Play(selectedVideo);
-                    else if (AtEnd() && nextBlock < 0) listener.OnMove(1);
+                    else if (AtEnd() && nextBlock < 0) Move(1);
                     else if (AtEnd()) listener.OnNearLoadedEnd(); // the rest is on its way
                     else scroll.ScrollBy(h * 0.45);
                     return true;
@@ -434,10 +443,10 @@ namespace Broadsheet
                     scroll.ScrollTo(scroll.Max, true);
                     return true;
                 case Key.Right:  // feature: reader.prev_next
-                    listener.OnMove(1);
+                    Move(1);
                     return true;
                 case Key.Left:
-                    listener.OnMove(-1);
+                    Move(-1);
                     return true;
                 case Key.Escape:
                 case Key.Back:
@@ -453,6 +462,82 @@ namespace Broadsheet
         {
             // Arrows step as on the TV; switch to scroll.Hold(±1) in OnKey for a browser-style glide.
             if (k == Key.Down || k == Key.Up) scroll.Release();
+        }
+
+        public void ResetSlide()
+        {
+            slideGen++;
+            inShift.BeginAnimation(TranslateTransform.XProperty, null);
+            outShift.BeginAnimation(TranslateTransform.XProperty, null);
+            inShift.X = 0;
+            outShift.X = 0;
+            outgoing.Visibility = Visibility.Collapsed;
+            outgoing.Source = null;
+        }
+
+        /// <summary>Slides to the previous (-1) or next (+1) story like a card deck.</summary>
+        void Move(int delta)  // feature: reader.prev_next
+        {
+            ResetSlide();
+            double w = scroll.ActualWidth > 0 ? scroll.ActualWidth : ActualWidth;
+            double h = scroll.ActualHeight > 0 ? scroll.ActualHeight : ActualHeight;
+            RenderTargetBitmap snap = w > 0 && h > 0 ? CaptureScroll(w, h, delta) : null;
+            if (!listener.OnMove(delta))
+            {
+                BounceEdge(delta);
+                return;
+            }
+            if (snap == null || w <= 0) return;
+            int gen = slideGen;
+            outgoing.Width = w;
+            outgoing.Height = h;
+            outgoing.Source = snap;
+            outgoing.Visibility = Visibility.Visible;
+            outShift.X = 0;
+            inShift.X = delta * w;
+            Duration d = new Duration(TimeSpan.FromMilliseconds(210));
+            CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+            DoubleAnimation outAnim = new DoubleAnimation(0, -delta * w, d) { EasingFunction = ease };
+            DoubleAnimation inAnim = new DoubleAnimation(delta * w, 0, d) { EasingFunction = ease };
+            inAnim.Completed += (s, e) => { if (gen == slideGen) ResetSlide(); };
+            outShift.BeginAnimation(TranslateTransform.XProperty, outAnim);
+            inShift.BeginAnimation(TranslateTransform.XProperty, inAnim);
+        }
+
+        void BounceEdge(int delta)
+        {
+            int gen = slideGen;
+            DoubleAnimationUsingKeyFrames kf = new DoubleAnimationUsingKeyFrames();
+            kf.KeyFrames.Add(new EasingDoubleKeyFrame(-delta * 18, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(85)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+            kf.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+            kf.Completed += (s, e) => { if (gen == slideGen) ResetSlide(); };
+            inShift.BeginAnimation(TranslateTransform.XProperty, kf);
+        }
+
+        RenderTargetBitmap CaptureScroll(double w, double h, int delta)
+        {
+            try
+            {
+                double dpi = 96 * Ui.PixelsPerDip;
+                int pw = Math.Max(1, (int)Math.Ceiling(w * Ui.PixelsPerDip));
+                int ph = Math.Max(1, (int)Math.Ceiling(h * Ui.PixelsPerDip));
+                RenderTargetBitmap rtb = new RenderTargetBitmap(pw, ph, dpi, dpi, PixelFormats.Pbgra32);
+                DrawingVisual dv = new DrawingVisual();
+                using (DrawingContext dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Ui.Brush(Ui.PAPER), null, new Rect(0, 0, w, h));
+                    dc.DrawRectangle(new VisualBrush(scroll), null, new Rect(0, 0, w, h));
+                    double ex = delta > 0 ? w - 1 : 0;
+                    dc.DrawRectangle(Ui.Brush(Ui.RULE), null, new Rect(ex, 0, 1, h));
+                }
+                rtb.Render(dv);
+                rtb.Freeze();
+                return rtb;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         void Play(Picture p)

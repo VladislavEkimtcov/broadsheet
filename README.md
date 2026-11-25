@@ -113,16 +113,15 @@ windows\build.cmd test
 
 ## Releases
 
-One version for every port, in `version.env`. To release: add a `## X.Y.Z` section to
-[CHANGELOG.md](CHANGELOG.md), push it, then run `tools/release.sh X.Y.Z` on an up-to-date
-`main`. It checks parity and the shared cases, bumps `version.env` (the Android version code
-goes up by one), commits "Release X.Y.Z", tags `vX.Y.Z` and pushes. The tag runs
-[`release.yml`](.github/workflows/release.yml): the tests, the APK built and signed with the
-release key (kept in the repository's Actions secrets; the certificate is pinned in
-`android/signing-cert.sha256`), the Windows exe built with the in-box toolchain and zipped, and
-a GitHub release with `broadsheet.apk`, `broadsheet-windows.zip` and `SHA256SUMS.txt`, its
-notes taken from the changelog. Running the workflow by hand is a dry run: the same builds as
-artifacts, no release.
+One version for every port, in `version.env`. Every push to `main` runs
+[`release.yml`](.github/workflows/release.yml): it runs the tests, uses `version.env` as-is if
+that version isn't tagged/released yet or auto-bumps the patch version and `VERSION_CODE`,
+builds and signs the Android APK (key kept in Actions secrets; certificate pinned in
+`android/signing-cert.sha256`), builds and zips the Windows exe with the in-box toolchain, and
+publishes a GitHub release with `broadsheet.apk`, `broadsheet-windows.zip` and `SHA256SUMS.txt`.
+For a named minor or major release, add a `## X.Y.Z` section to [CHANGELOG.md](CHANGELOG.md),
+push it, and run `tools/release.sh X.Y.Z` (or bump `version.env` directly before pushing `main`).
+Running the workflow by hand (`workflow_dispatch`) is a dry run: the same builds as artifacts, no release.
 
 ## FAQ
 

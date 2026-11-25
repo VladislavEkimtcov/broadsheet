@@ -18,8 +18,9 @@ Apple News for Android phones and tablets (Android 7.1 or later), in the same ne
 | ![Apple News front page in Broadsheet on an Android phone, light by day: masthead, a strip of sections, a hero story with its headline over the picture, and briefs](../docs/phone/front-light.jpg) | ![The reader on an Android phone: dateline, serif headline, standfirst and the lead picture under a bar with a back arrow and a menu](../docs/phone/reader.jpg) | ![The options sheet on an Android phone: Save story on Mac, Like or dislike, Mark as unread, More stories like this with a chevron, Open in the browser, the text size slider and Dark mode](../docs/phone/options.jpg) |
 
 - **Front page:** a masthead with ☰, the sections as a strip along the top that scrolls
-  sideways (the chosen one lit, with the red bar at its foot), and the section in one column:
-  hero, briefs, picture cards; two columns in landscape or on a tablet. Tap a story to read it,
+  sideways (the chosen one lit, with the red bar at its foot), and a gallery-style pager over
+  each section in one column (two in landscape or on a tablet): hero, briefs, picture cards.
+  Swipe left or right anywhere on the page to slide between categories, tap a story to read it,
   long-press it for its options. Deep sections load more as you scroll; pull down to refresh.
   The last front page shows at once when the app starts; if the Mac isn't answering, a note
   says so and what's there stays readable.
@@ -115,7 +116,7 @@ your network by itself.
    python3 -m apple_news_relay serve --host 0.0.0.0 --allow 127.0.0.1,192.168.1.0/24
    ```
 2. Install `broadsheet.apk` on the TV (sideload it with Downloader or `adb install -r
-   broadsheet.apk`, or [build it](#build)), open **News**. It finds the relay with
+   broadsheet.apk`, or [build it](#build)), open **Broadsheet**. It finds the relay with
    Bonjour (`_newsrelay._tcp`), and where Bonjour doesn't get through (common between Wi-Fi and
    wired networks, or with a VPN app on the TV) by asking port 8787 on its own subnet. Until it
    finds one it tries again every 30 seconds; OK tries at once.

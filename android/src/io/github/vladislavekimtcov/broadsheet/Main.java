@@ -512,6 +512,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     public void onOpen(Relay.Section section, int index) {
         openSection = section;
         openIndex = index;
+        reader.resetSlide();
         reader.setVisibility(View.VISIBLE);
         reader.bringToFront();
         player.bringToFront();
@@ -816,16 +817,25 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     }
 
     @Override
-    public void onMove(int delta) {
-        if (openSection == null) return;
+    public boolean onMove(int delta) {
+        if (openSection == null) return false;
         int next = openIndex + delta;
-        if (next < 0 || next >= openSection.stories.size()) return;
+        if (next < 0 || next >= openSection.stories.size()) return false;
         openIndex = next;
         open(openSection.stories.get(next));
+        return true;
+    }
+
+    @Override
+    public Story peekStory(int delta) {
+        if (openSection == null) return null;
+        int next = openIndex + delta;
+        return next >= 0 && next < openSection.stories.size() ? openSection.stories.get(next) : null;
     }
 
     @Override
     public void onClose() {
+        reader.resetSlide();
         leaveStory();
         reading = null;
         waitingJob = null;

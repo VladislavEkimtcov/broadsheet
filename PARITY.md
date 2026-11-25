@@ -61,7 +61,7 @@ renumbered when the ports started sharing one version).
 | `reader.body_cache` | Stories opened or headed for are kept on the device (8 MB, 400 stories, two weeks), so they open at once, even while the Mac sleeps | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | TV: app cache folder. Windows: `%LOCALAPPDATA%\Broadsheet\bodies` |
 | `reader.progressive` | A story opens in one trip with its first couple of screens; the rest loads as you read toward it | ✅ 0.3.0 | ✅ 0.4.0 | ✅ 0.2.0 | Needs relay 0.3 |
 | `reader.resume` | Reopening a story goes back to where you left it | ✅ | ✅ 0.4.0 | ✅ |  |
-| `reader.prev_next` | Left/Right: previous/next story | ✅ | ⚠️ 0.4.0 | ✅ | Phone: a sideways swipe (`phone.swipe`) |
+| `reader.prev_next` | Left/Right: previous/next story, animated with a card slide | ✅ | ⚠️ 0.4.0 | ✅ | Outgoing card slides off while incoming card slides in (edge bounce at ends). Phone: also a live sideways swipe (`phone.swipe`) |
 | `reader.page_keys` | A page at a time | ✅ | — | ✅ | TV: Fast-forward/Rewind. Windows: Space/Page Down/Page Up. Phone: no page keys; it scrolls and flings with a finger |
 | `win.paragraphs` | Paragraphs split on line breaks in the relay's text | — | — | ✅ | Windows only, on the owner's request (was in MainWindow.cs's divergence note) |
 | `video.inline` | A story's video plays inside the app, full screen; Left/Right 10 s, OK pause | ✅ | ✅ 0.4.0 | ⚠️ | Windows: Windows' own WinRT MediaPlayer (HLS via AdaptiveMediaSource, and MP4) since Unreleased, replacing MediaElement (no HLS, crashed on DOORWEDGE's IoT image); stays ⚠️ until checked on screen on DOORWEDGE (decoding verified there headless, sound not yet). Enter opens it in the browser if it still fails. Phone: a tap plays it full screen without the system bars; tap pauses, tap on the line seeks |
@@ -104,9 +104,9 @@ renumbered when the ports started sharing one version).
 | ID | Feature | TV | Phone | Windows | Notes |
 |---|---|---|---|---|---|
 | `phone.feed` | Front page in one column: masthead with ☰, hero, briefs, picture cards; two columns where the screen is wide | — | ✅ 0.4.0 | — | TV and Windows: the rail and grid (`front.rail`) |
-| `phone.strip` | Sections as a strip along the top that scrolls sideways, the chosen one lit with the accent bar at its foot | — | ✅ 0.4.0 | — | TV and Windows: the rail on the left |
+| `phone.strip` | Sections as a strip along the top that scrolls sideways, the chosen one lit with the accent bar at its foot; swiping sideways on the feed slides 1:1 between categories like a gallery | — | ✅ 0.4.0 | — | TV and Windows: the rail on the left |
 | `phone.pull_refresh` | Pull down at the top of the page to refresh (asks the Mac for a fresh Today, then reloads) | — | ✅ 0.4.0 | — | TV and Windows: Refresh now in Options; Windows also F5 |
-| `phone.swipe` | Swipe sideways in a story for the previous or next one | — | ✅ 0.4.0 | — | TV: Left/Right. Windows: Left/Right keys |
+| `phone.swipe` | Swipe sideways in a story for the previous or next one, sliding 1:1 with a live peek of the adjacent story | — | ✅ 0.4.0 | — | TV: Left/Right. Windows: Left/Right keys (`reader.prev_next`) |
 | `phone.long_press` | Long press on a card: Options for that story | — | ✅ 0.4.0 | — | TV: Menu on the focused card. Windows: hover a card and press M |
 | `phone.sheet` | Options as a sheet from the bottom: tap a tile, ‹ › for values, drag the text size slider, tap the shade to close | — | ✅ 0.4.0 | — | TV and Windows: the panel from the right (`opt.panel`) |
 | `phone.relay_field` | Relay address, the last entry in Options (empty: found by itself); writes relay.conf | ✅ | ✅ 0.4.0 | ✅ | TV: a tile showing the address (or Automatic); OK opens a box with the on-screen keyboard, Done sets it, Back leaves it. Windows: a tile; Enter or a click opens a pop-up with a text box, Enter sets it, Esc leaves it. Phone: a field under the tiles |

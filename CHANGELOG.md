@@ -5,6 +5,14 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
+## 0.7.0
+
+2026-11-25.
+
+- **Android app name and icon:** named **Broadsheet** on TV and phone (was "News"), with the white Newsreader Display underlined **B** on red (`#C4262C`) matching Windows.
+- **Phone front page:** swipe left and right across the categories view to slide smoothly 1:1 between categories like a photo gallery (catchable mid-glide, synced with the top strip).
+- **Reader, all ports:** moving between stories with Left/Right (and swiping sideways on the phone with a live peek of the next story) animates with a card-sliding transition.
+
 ## 0.6.0
 
 2026-11-25. **Auto-updates from GitHub Releases, all ports:** release builds watch GitHub Releases quietly (using `HEAD /releases/latest` without hitting the API rate limit), download and verify new releases in the background, and never interrupt reading:

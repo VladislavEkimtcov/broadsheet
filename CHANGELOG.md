@@ -5,6 +5,14 @@ Windows port. Each `## X.Y.Z` section is the release notes of the GitHub release
 (`tools/release.sh` refuses to release a version without one). Earlier Windows versions had
 their own numbers; they're noted where they shipped.
 
+## Unreleased
+
+- **Phone front page:** the category strip's highlight block and accent rule now stretch and flow
+  between tabs in lockstep with the gallery swipe.
+- **Reader, all ports:** story-to-story transitions now feel like a stack of cards (swiping left /
+  pressing Right lands the next story on top from the right edge; swiping right / pressing Left
+  moves the current card off the top to uncover the previous story underneath).
+
 ## 0.7.0
 
 2026-11-25.

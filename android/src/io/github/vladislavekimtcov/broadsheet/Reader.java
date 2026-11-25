@@ -81,8 +81,9 @@ final class Reader extends FrameLayout {  // feature: reader.column
      *  in the story as last seen (kept across a rotation). */
     private Bar bar;
     private FrameLayout holder;
-    private android.widget.ImageView outgoing;
-    private LinearLayout peek;
+    private android.widget.ImageView underlay, overlay;
+    private View underScrim, midScrim;
+    private LinearLayout underPeek, overPeek;
     private int peekDir;
     private android.animation.ValueAnimator slideAnim;
     private android.graphics.Bitmap slideBmp;
@@ -97,13 +98,21 @@ final class Reader extends FrameLayout {  // feature: reader.column
         this.images = images;
         this.listener = listener;
         setBackgroundColor(Ui.PAPER);
+        underlay = new android.widget.ImageView(c);
+        underlay.setScaleType(android.widget.ImageView.ScaleType.MATRIX);
+        underlay.setVisibility(GONE);
+        addView(underlay, new LayoutParams(-1, -1));
         if (Ui.touch) {
-            peek = new LinearLayout(c);
-            peek.setOrientation(LinearLayout.VERTICAL);
-            peek.setBackgroundColor(Ui.PAPER);
-            peek.setVisibility(GONE);
-            addView(peek, new LayoutParams(-1, -1));
+            underPeek = new LinearLayout(c);
+            underPeek.setOrientation(LinearLayout.VERTICAL);
+            underPeek.setBackgroundColor(Ui.PAPER);
+            underPeek.setVisibility(GONE);
+            addView(underPeek, new LayoutParams(-1, -1));
         }
+        underScrim = new View(c);
+        underScrim.setBackgroundColor(0xFF000000);
+        underScrim.setVisibility(GONE);
+        addView(underScrim, new LayoutParams(-1, -1));
         scroll = new Page(c);
         scroll.setBackgroundColor(Ui.PAPER);
         column = new LinearLayout(c);
@@ -113,10 +122,21 @@ final class Reader extends FrameLayout {  // feature: reader.column
         holder.addView(column, new FrameLayout.LayoutParams(Ui.dp(700), -2, Gravity.CENTER_HORIZONTAL));
         scroll.addView(holder, new ViewGroup.LayoutParams(-1, -2));
         addView(scroll, new LayoutParams(-1, -1));
-        outgoing = new android.widget.ImageView(c);
-        outgoing.setScaleType(android.widget.ImageView.ScaleType.MATRIX);
-        outgoing.setVisibility(GONE);
-        addView(outgoing, new LayoutParams(-1, -1));
+        midScrim = new View(c);
+        midScrim.setBackgroundColor(0xFF000000);
+        midScrim.setVisibility(GONE);
+        addView(midScrim, new LayoutParams(-1, -1));
+        if (Ui.touch) {
+            overPeek = new LinearLayout(c);
+            overPeek.setOrientation(LinearLayout.VERTICAL);
+            overPeek.setBackground(new CardBg());
+            overPeek.setVisibility(GONE);
+            addView(overPeek, new LayoutParams(-1, -1));
+        }
+        overlay = new android.widget.ImageView(c);
+        overlay.setScaleType(android.widget.ImageView.ScaleType.MATRIX);
+        overlay.setVisibility(GONE);
+        addView(overlay, new LayoutParams(-1, -1));
         progress = new View(c);
         progress.setBackgroundColor(Ui.ACCENT);
         progress.setPivotX(0);
@@ -741,30 +761,42 @@ final class Reader extends FrameLayout {  // feature: reader.column
         scroll.setTranslationX(0);
         holder.setTranslationX(0);
         holder.setAlpha(1f);
-        outgoing.setVisibility(GONE);
-        outgoing.setImageDrawable(null);
-        outgoing.setTranslationX(0);
+        underlay.setVisibility(GONE);
+        underlay.setImageDrawable(null);
+        underlay.setTranslationX(0);
+        overlay.setVisibility(GONE);
+        overlay.setImageDrawable(null);
+        overlay.setTranslationX(0);
+        underScrim.setVisibility(GONE);
+        underScrim.setAlpha(0f);
+        midScrim.setVisibility(GONE);
+        midScrim.setAlpha(0f);
         if (slideBmp != null) {
             slideBmp.recycle();
             slideBmp = null;
         }
-        if (peek != null) {
-            peek.setVisibility(GONE);
-            peek.removeAllViews();
-            peek.setTranslationX(0);
-            peekDir = 0;
+        if (underPeek != null) {
+            underPeek.setVisibility(GONE);
+            underPeek.removeAllViews();
+            underPeek.setTranslationX(0);
         }
+        if (overPeek != null) {
+            overPeek.setVisibility(GONE);
+            overPeek.removeAllViews();
+            overPeek.setTranslationX(0);
+        }
+        peekDir = 0;
     }
 
-    /** Slides to the previous (-1) or next (+1) story like a card deck (TV, phone, keyboard). */
+    /** Slides to the previous (-1) or next (+1) story like a card stack. */
     private void move(int delta) {  // feature: reader.prev_next
         slideTo(delta, 0f);
     }
 
-    private void slideTo(final int delta, float fromOffset) {
-        int w = scroll.getWidth() > 0 ? scroll.getWidth() : getWidth();
-        int h = scroll.getHeight() > 0 ? scroll.getHeight() : getHeight();
-        android.graphics.Bitmap snap = w > 0 && h > 0 ? captureScroll(w, h, delta) : null;
+    private void slideTo(final int delta, float fromProgress) {
+        final int w = scroll.getWidth() > 0 ? scroll.getWidth() : getWidth();
+        final int h = scroll.getHeight() > 0 ? scroll.getHeight() : getHeight();
+        android.graphics.Bitmap snap = w > 0 && h > 0 ? captureScroll(w, h, delta < 0) : null;
         resetSlide();
         if (!listener.onMove(delta)) {
             if (snap != null) snap.recycle();
@@ -773,19 +805,40 @@ final class Reader extends FrameLayout {  // feature: reader.column
         }
         if (snap == null || w <= 0) return;
         slideBmp = snap;
-        outgoing.setImageBitmap(snap);
-        outgoing.setVisibility(VISIBLE);
-        outgoing.setTranslationX(fromOffset);
-        scroll.setTranslationX(fromOffset + delta * w);
-        float dist = Math.abs(-delta * w - fromOffset);
-        long dur = Math.max(130L, Math.min(220L, Math.round(210f * dist / w)));
-        slideAnim = android.animation.ValueAnimator.ofFloat(fromOffset, -delta * w);
+        final float shift = Ui.dp(48);
+        float p0 = Math.max(0f, Math.min(1f, fromProgress));
+        if (delta > 0) {
+            // Swipe left / Right key: new story lands ON TOP from the right edge.
+            underlay.setImageBitmap(snap);
+            underlay.setVisibility(VISIBLE);
+            underlay.setTranslationX(-p0 * shift);
+            underScrim.setVisibility(VISIBLE);
+            underScrim.setAlpha(0.22f * p0);
+            scroll.setTranslationX((1f - p0) * w);
+        } else {
+            // Swipe right / Left key: current story moves OFF THE TOP to the right edge.
+            overlay.setImageBitmap(snap);
+            overlay.setVisibility(VISIBLE);
+            overlay.setTranslationX(p0 * w);
+            midScrim.setVisibility(VISIBLE);
+            midScrim.setAlpha(0.22f * (1f - p0));
+            scroll.setTranslationX(-(1f - p0) * shift);
+        }
+        long dur = Math.max(130L, Math.min(220L, Math.round(210f * (1f - p0))));
+        slideAnim = android.animation.ValueAnimator.ofFloat(p0, 1f);
         slideAnim.setDuration(dur);
         slideAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(2.2f));
         slideAnim.addUpdateListener(a -> {
-            float x = (Float) a.getAnimatedValue();
-            outgoing.setTranslationX(x);
-            scroll.setTranslationX(x + delta * w);
+            float t = (Float) a.getAnimatedValue();
+            if (delta > 0) {
+                scroll.setTranslationX((1f - t) * w);
+                underlay.setTranslationX(-t * shift);
+                underScrim.setAlpha(0.22f * t);
+            } else {
+                overlay.setTranslationX(t * w);
+                scroll.setTranslationX(-(1f - t) * shift);
+                midScrim.setAlpha(0.22f * (1f - t));
+            }
         });
         slideAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             private boolean cancelled;
@@ -820,58 +873,88 @@ final class Reader extends FrameLayout {  // feature: reader.column
         slideAnim.start();
     }
 
-    private android.graphics.Bitmap captureScroll(int w, int h, int delta) {
+    private android.graphics.Bitmap captureScroll(int w, int h, boolean leftEdge) {
         try {
             android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
             Canvas c = new Canvas(b);
             c.drawColor(Ui.PAPER);
             scroll.draw(c);
-            Paint edge = new Paint();
-            edge.setColor(Ui.RULE);
-            float ex = delta > 0 ? w - Ui.px(1) : 0;
-            c.drawRect(ex, 0, ex + Ui.px(1), h, edge);
+            if (leftEdge) {
+                Paint edge = new Paint();
+                edge.setColor(Ui.RULE);
+                c.drawRect(0, 0, Ui.px(1), h, edge);
+            }
             return b;
         } catch (OutOfMemoryError e) {
             return null;
         }
     }
 
-    private void showPeek(int dir, float dx) {
-        if (peek == null) return;
+    private void bindPeek(LinearLayout box, Story adj) {
+        box.removeAllViews();
         int w = getWidth();
+        Context c = getContext();
+        int padTop = Ui.dp(52) + Ui.insetTop + Ui.dp(22);
+        int padSide = Math.max(Ui.dp(22), (w - columnWidth()) / 2);
+        box.setPadding(padSide, padTop, padSide, Ui.dp(40));
+        TextView dateline = Ui.text(c, 14, Ui.MUTED, Ui.sansMedium);
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (adj.channel != null) {
+            sb.append(adj.channel.toUpperCase(java.util.Locale.getDefault()));
+            sb.setSpan(new ForegroundColorSpan(adj.accent()), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        String ago = Dates.ago(adj.published, System.currentTimeMillis());
+        if (!ago.isEmpty()) sb.append(sb.length() > 0 ? "  ·  " : "").append(ago);
+        dateline.setText(sb);
+        box.addView(dateline);
+        TextView title = Ui.text(c, size() * 1.72f, Ui.INK, Ui.head);
+        title.setText(adj.title);
+        title.setLineSpacing(0, 1.08f);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2);
+        tl.topMargin = Ui.dp(16);
+        box.addView(title, tl);
+        if (adj.excerpt != null) box.addView(standfirst(adj.excerpt));
+    }
+
+    private void updateStackDrag(int dir, float dx, boolean hasAdj) {
+        int w = Math.max(1, getWidth());
+        float shift = Ui.dp(48);
+        if (!hasAdj) {
+            if (underPeek != null) underPeek.setVisibility(GONE);
+            if (overPeek != null) overPeek.setVisibility(GONE);
+            underScrim.setVisibility(GONE);
+            midScrim.setVisibility(GONE);
+            scroll.setTranslationX(dx);
+            return;
+        }
         if (dir != peekDir) {
             peekDir = dir;
-            peek.removeAllViews();
             Story adj = listener.peekStory(dir);
-            if (adj == null) {
-                peek.setVisibility(GONE);
-                return;
+            if (dir > 0 && overPeek != null && adj != null) {
+                bindPeek(overPeek, adj);
+                if (underPeek != null) underPeek.setVisibility(GONE);
+                underScrim.setVisibility(GONE);
+            } else if (dir < 0 && underPeek != null && adj != null) {
+                bindPeek(underPeek, adj);
+                if (overPeek != null) overPeek.setVisibility(GONE);
+                midScrim.setVisibility(GONE);
             }
-            Context c = getContext();
-            int padTop = Ui.dp(52) + Ui.insetTop + Ui.dp(22);
-            int padSide = Math.max(Ui.dp(22), (w - columnWidth()) / 2);
-            peek.setPadding(padSide, padTop, padSide, Ui.dp(40));
-            TextView dateline = Ui.text(c, 14, Ui.MUTED, Ui.sansMedium);
-            SpannableStringBuilder sb = new SpannableStringBuilder();
-            if (adj.channel != null) {
-                sb.append(adj.channel.toUpperCase(java.util.Locale.getDefault()));
-                sb.setSpan(new ForegroundColorSpan(adj.accent()), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            String ago = Dates.ago(adj.published, System.currentTimeMillis());
-            if (!ago.isEmpty()) sb.append(sb.length() > 0 ? "  ·  " : "").append(ago);
-            dateline.setText(sb);
-            peek.addView(dateline);
-            TextView title = Ui.text(c, size() * 1.72f, Ui.INK, Ui.head);
-            title.setText(adj.title);
-            title.setLineSpacing(0, 1.08f);
-            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-1, -2);
-            tl.topMargin = Ui.dp(16);
-            peek.addView(title, tl);
-            if (adj.excerpt != null) peek.addView(standfirst(adj.excerpt));
         }
-        if (peek.getChildCount() > 0) {
-            peek.setVisibility(VISIBLE);
-            peek.setTranslationX(dx + dir * w);
+        float p = Math.min(1f, Math.abs(dx) / w);
+        if (dir > 0 && overPeek != null) {
+            // Swiping left: next story card comes from right ON TOP of current story.
+            overPeek.setVisibility(VISIBLE);
+            overPeek.setTranslationX(w + dx);
+            midScrim.setVisibility(VISIBLE);
+            midScrim.setAlpha(0.22f * p);
+            scroll.setTranslationX(-p * shift);
+        } else if (dir < 0 && underPeek != null) {
+            // Swiping right: current story moves OFF THE TOP to uncover previous underneath.
+            underPeek.setVisibility(VISIBLE);
+            underPeek.setTranslationX(-(1f - p) * shift);
+            underScrim.setVisibility(VISIBLE);
+            underScrim.setAlpha(0.22f * (1f - p));
+            scroll.setTranslationX(dx);
         }
     }
 
@@ -915,19 +998,18 @@ final class Reader extends FrameLayout {  // feature: reader.column
         switch (e.getActionMasked()) {
             case android.view.MotionEvent.ACTION_MOVE:
                 dragX = dx;
-                scroll.setTranslationX(dx);
-                if (hasAdj) showPeek(dir, dx);
-                else if (peek != null) peek.setVisibility(GONE);
+                updateStackDrag(dir, dx, hasAdj);
                 return true;
             case android.view.MotionEvent.ACTION_UP: {
                 velocity.computeCurrentVelocity(1000);
                 float vx = velocity.getXVelocity();
                 swiping = false;
-                boolean far = Math.abs(raw) > getWidth() * 0.22f;
+                int w = Math.max(1, getWidth());
+                boolean far = Math.abs(raw) > w * 0.22f;
                 boolean fast = Math.abs(vx) > Ui.dp(700) && Math.signum(vx) == Math.signum(raw) && Math.abs(raw) > slop;
                 int moveDir = raw < 0 ? 1 : -1;
                 if ((far || fast) && listener.peekStory(moveDir) != null) {
-                    slideTo(moveDir, dragX);
+                    slideTo(moveDir, Math.min(1f, Math.abs(dragX) / w));
                 } else {
                     springBack();
                 }
@@ -944,15 +1026,31 @@ final class Reader extends FrameLayout {  // feature: reader.column
 
     private void springBack() {
         final int dir = peekDir;
-        final int w = getWidth();
-        slideAnim = android.animation.ValueAnimator.ofFloat(dragX, 0f);
-        slideAnim.setDuration(180);
-        slideAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(2f));
-        slideAnim.addUpdateListener(a -> {
-            float x = (Float) a.getAnimatedValue();
-            scroll.setTranslationX(x);
-            if (peek != null && dir != 0) peek.setTranslationX(x + dir * w);
-        });
+        final int w = Math.max(1, getWidth());
+        final float shift = Ui.dp(48);
+        final float startP = Math.min(1f, Math.abs(dragX) / w);
+        if (dir == 0) {
+            slideAnim = android.animation.ValueAnimator.ofFloat(dragX, 0f);
+            slideAnim.setDuration(180);
+            slideAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(2f));
+            slideAnim.addUpdateListener(a -> scroll.setTranslationX((Float) a.getAnimatedValue()));
+        } else {
+            slideAnim = android.animation.ValueAnimator.ofFloat(startP, 0f);
+            slideAnim.setDuration(180);
+            slideAnim.setInterpolator(new android.view.animation.DecelerateInterpolator(2f));
+            slideAnim.addUpdateListener(a -> {
+                float p = (Float) a.getAnimatedValue();
+                if (dir > 0 && overPeek != null) {
+                    overPeek.setTranslationX((1f - p) * w);
+                    midScrim.setAlpha(0.22f * p);
+                    scroll.setTranslationX(-p * shift);
+                } else if (dir < 0 && underPeek != null) {
+                    scroll.setTranslationX(p * w);
+                    underPeek.setTranslationX(-(1f - p) * shift);
+                    underScrim.setAlpha(0.22f * (1f - p));
+                }
+            });
+        }
         slideAnim.addListener(new android.animation.AnimatorListenerAdapter() {
             @Override
             public void onAnimationEnd(android.animation.Animator animation) {
@@ -961,6 +1059,32 @@ final class Reader extends FrameLayout {  // feature: reader.column
             }
         });
         slideAnim.start();
+    }
+
+    /** Card background with a crisp left hairline when landing on top of another story. */
+    private static final class CardBg extends android.graphics.drawable.Drawable {
+        private final Paint paint = new Paint();
+
+        @Override
+        public void draw(Canvas c) {
+            Rect b = getBounds();
+            paint.setColor(Ui.PAPER);
+            c.drawRect(b, paint);
+            paint.setColor(Ui.RULE);
+            c.drawRect(b.left, b.top, b.left + Ui.px(1), b.bottom, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {}
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter filter) {}
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public int getOpacity() {
+            return android.graphics.PixelFormat.OPAQUE;
+        }
     }
 
     /** Touch: ← back to the front page, ☰ options; on top of the page, in the page's colour. */

@@ -52,7 +52,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     private final View hair;
     private boolean wide;
     private final HorizontalScrollView stripScroll;
-    private final LinearLayout strip;
+    private final Strip strip;
     private final Pull pull;
     private final Pager pager;
     private final TextView message;
@@ -114,7 +114,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         stripScroll.setOverScrollMode(OVER_SCROLL_NEVER);
         stripScroll.setHorizontalFadingEdgeEnabled(true);
         stripScroll.setFadingEdgeLength(Ui.dp(20));
-        strip = new LinearLayout(c);
+        strip = new Strip(c);
         strip.setOrientation(LinearLayout.HORIZONTAL);
         strip.setPadding(Ui.dp(GUTTER_DP - 10), 0, Ui.dp(GUTTER_DP - 10), 0);
         stripScroll.addView(strip, new ViewGroup.LayoutParams(-2, Ui.dp(44)));
@@ -365,12 +365,12 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         if (index < 0 || index >= sections.size()) return;
         current = index;
         if (chosenAt < 0) chosenAt = index;
-        syncStrip(index);
+        syncStrip(index, true);
         pager.bindWindow(index);
     }
 
-    private void syncStrip(int index) {
-        for (Tab t : tabs) t.setChosen(t.index == index);
+    private void syncStrip(int index, boolean snap) {
+        if (snap) strip.setBlobPos(index);
         if (index < 0 || index >= tabs.size()) return;
         final Tab tab = tabs.get(index);
         stripScroll.post(() -> {
@@ -528,6 +528,10 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
                 next.setVisibility(next.section != null && offset < 0 ? VISIBLE : INVISIBLE);
                 next.setTranslationX(offset + w);
             }
+            if (current >= 0 && w > 0) {
+                float pos = current - offset / (float) w;
+                strip.setBlobPos(Math.max(0f, Math.min(Math.max(0, tabs.size() - 1), pos)));
+            }
         }
 
         private float damp(float raw) {
@@ -555,21 +559,24 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             // Multi-tab jump: bind the destination into the incoming slot and slide cleanly across.
             cancelAnim();
             dragX = 0;
+            final int fromIndex = current;
             final int dir = Integer.signum(delta);
             final PageView incoming = dir > 0 ? next : prev;
             incoming.bind(target);
-            int w = pageW();
+            final int w = pageW();
             incoming.setTranslationX(dir * w);
             incoming.setVisibility(VISIBLE);
             settling = true;
-            anim = ValueAnimator.ofFloat(0f, -dir * w);
+            anim = ValueAnimator.ofFloat(0f, 1f);
             anim.setDuration(240);
             anim.setInterpolator(new DecelerateInterpolator(2f));
             anim.addUpdateListener(a -> {
-                float x = (Float) a.getAnimatedValue();
+                float t = (Float) a.getAnimatedValue();
+                float x = -dir * w * t;
                 dragX = x;
                 curr.setTranslationX(x);
                 incoming.setTranslationX(x + dir * w);
+                strip.setBlobPos(fromIndex + (target - fromIndex) * t);
             });
             anim.addListener(new AnimatorListenerAdapter() {
                 private boolean cancelled;
@@ -596,7 +603,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
                     }
                     current = target;
                     onSectionSelected(target);
-                    syncStrip(target);
+                    syncStrip(target, true);
                     prev.bind(target - 1);
                     next.bind(target + 1);
                     positionSlots(0);
@@ -730,7 +737,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             }
             current += delta;
             onSectionSelected(current);
-            syncStrip(current);
+            syncStrip(current, true);
             if (delta > 0) next.bind(current + 1);
             else prev.bind(current - 1);
             positionSlots(0);
@@ -1051,11 +1058,89 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         }
     }
 
-    /** A section on the strip: square, lit when chosen with the accent bar along its foot. */
+    /**
+     * The top category strip: draws one continuous highlight blob + accent foot bar that tears
+     * smoothly from one variable-width tab and flows into the next in lockstep with the pager.
+     */
+    private final class Strip extends LinearLayout {  // feature: phone.strip
+        private final Paint fill = new Paint();
+        private final Paint bar = new Paint();
+        private float blobPos;
+
+        Strip(Context c) {
+            super(c);
+            setWillNotDraw(false);
+            fill.setColor(Ui.SURFACE_HI);
+            bar.setColor(Ui.ACCENT);
+        }
+
+        void setBlobPos(float pos) {
+            blobPos = Math.max(0f, Math.min(Math.max(0, tabs.size() - 1), pos));
+            for (Tab t : tabs) t.setFocusWeight(Math.max(0f, 1f - Math.abs(blobPos - t.index)));
+            followBlob();
+            invalidate();
+        }
+
+        private void followBlob() {
+            if (tabs.isEmpty() || stripScroll.getWidth() <= 0) return;
+            float[] span = spanAt(blobPos);
+            if (span == null) return;
+            float cx = (span[0] + span[1]) * 0.5f;
+            int vw = stripScroll.getWidth();
+            int sx = stripScroll.getScrollX();
+            int pad = Ui.dp(36);
+            if (span[0] < sx + pad) {
+                stripScroll.scrollTo(Math.max(0, Math.round(span[0] - pad)), 0);
+            } else if (span[1] > sx + vw - pad) {
+                int maxScroll = Math.max(0, getWidth() - vw);
+                stripScroll.scrollTo(Math.min(maxScroll, Math.round(span[1] - vw + pad)), 0);
+            } else if (cx < sx + vw * 0.25f && sx > 0) {
+                stripScroll.scrollTo(Math.max(0, Math.round(cx - vw * 0.25f)), 0);
+            } else if (cx > sx + vw * 0.75f) {
+                int maxScroll = Math.max(0, getWidth() - vw);
+                stripScroll.scrollTo(Math.min(maxScroll, Math.round(cx - vw * 0.75f)), 0);
+            }
+        }
+
+        /** Leading edge races ahead while trailing edge clings, stretching the blob across cells. */
+        private float[] spanAt(float pos) {
+            if (tabs.isEmpty()) return null;
+            int i0 = Math.max(0, Math.min(tabs.size() - 1, (int) Math.floor(pos)));
+            int i1 = Math.max(0, Math.min(tabs.size() - 1, (int) Math.ceil(pos)));
+            Tab a = tabs.get(i0);
+            Tab b = tabs.get(i1);
+            if (a.getWidth() == 0 || b.getWidth() == 0) return null;
+            if (i0 == i1) return new float[] {a.getLeft(), a.getRight()};
+            float f = pos - i0;
+            float p = 2.4f;
+            float easeIn = (float) Math.pow(f, p);
+            float easeOut = 1f - (float) Math.pow(1f - f, p);
+            float left = a.getLeft() + (b.getLeft() - a.getLeft()) * easeIn;
+            float right = a.getRight() + (b.getRight() - a.getRight()) * easeOut;
+            return new float[] {left, right};
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int l, int t, int r, int b) {
+            super.onLayout(changed, l, t, r, b);
+            setBlobPos(blobPos);
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            super.onDraw(c);
+            float[] span = spanAt(blobPos);
+            if (span == null) return;
+            float h = getHeight();
+            c.drawRect(span[0], 0, span[1], h, fill);
+            c.drawRect(span[0], h - Ui.px(3), span[1], h, bar);
+        }
+    }
+
+    /** A section on the strip: transparent text over {@link Strip}'s flowing highlight blob. */
     private final class Tab extends TextView {
         final int index;
-        private boolean chosenTab;
-        private final Paint bar = new Paint();
+        private float weight;
 
         Tab(Context c, int index, String title) {
             super(c);
@@ -1066,31 +1151,36 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             setTypeface(Ui.sansMedium);
             setGravity(Gravity.CENTER);
             setPadding(Ui.dp(12), 0, Ui.dp(12), 0);
-            bar.setColor(Ui.ACCENT);
             setOnClickListener(v -> choose(this.index));
             refresh();
         }
 
-        void setChosen(boolean value) {
-            chosenTab = value;
+        void setFocusWeight(float w) {
+            float clamped = Math.max(0f, Math.min(1f, w));
+            if (Math.abs(clamped - weight) < 0.01f) return;
+            weight = clamped;
             refresh();
         }
 
         private void refresh() {
-            setTextColor(chosenTab || isPressed() ? Ui.INK : Ui.MUTED);
-            setBackgroundColor(chosenTab || isPressed() ? Ui.SURFACE_HI : 0);
+            float w = isPressed() ? 1f : weight;
+            setTextColor(blendColor(Ui.MUTED, Ui.INK, w));
+            setBackgroundColor(isPressed() ? Ui.alpha(Ui.SURFACE_HI, 0.55f) : 0);
+        }
+
+        private int blendColor(int a, int b, float t) {
+            int aa = (a >>> 24) & 0xFF, ar = (a >>> 16) & 0xFF, ag = (a >>> 8) & 0xFF, ab = a & 0xFF;
+            int ba = (b >>> 24) & 0xFF, br = (b >>> 16) & 0xFF, bg = (b >>> 8) & 0xFF, bb = b & 0xFF;
+            return (Math.round(aa + (ba - aa) * t) << 24)
+                    | (Math.round(ar + (br - ar) * t) << 16)
+                    | (Math.round(ag + (bg - ag) * t) << 8)
+                    | Math.round(ab + (bb - ab) * t);
         }
 
         @Override
         protected void drawableStateChanged() {
             super.drawableStateChanged();
             refresh();
-        }
-
-        @Override
-        protected void onDraw(Canvas c) {
-            super.onDraw(c);
-            if (chosenTab) c.drawRect(0, getHeight() - Ui.px(3), getWidth(), getHeight(), bar);
         }
     }
 

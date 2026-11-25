@@ -41,7 +41,10 @@ namespace Broadsheet
         readonly IListener listener;
         readonly Scroller scroll = new Scroller();
         readonly StackPanel column = new StackPanel();
-        readonly Image outgoing = new Image { Stretch = Stretch.Fill, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        readonly Image underlay = new Image { Stretch = Stretch.Fill, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        readonly Image overlay = new Image { Stretch = Stretch.Fill, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        readonly Border underScrim = new Border { Background = Brushes.Black, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+        readonly Border midScrim = new Border { Background = Brushes.Black, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         readonly TranslateTransform inShift = new TranslateTransform();
         readonly TranslateTransform outShift = new TranslateTransform();
         readonly Rectangle progress = new Rectangle();
@@ -67,14 +70,18 @@ namespace Broadsheet
             column.Margin = new Thickness(0, 56, 0, 140);
             column.HorizontalAlignment = HorizontalAlignment.Center;
             column.Width = 700;
+            underlay.RenderTransform = outShift;
+            Children.Add(underlay);
+            Children.Add(underScrim);
             scroll.Background = Ui.Brush(Ui.PAPER);
             scroll.Content = column;
             scroll.RenderTransform = inShift;
             scroll.Moved += OnScroll;
             scroll.SizeChanged += (s, e) => FitColumn();
             Children.Add(scroll);
-            outgoing.RenderTransform = outShift;
-            Children.Add(outgoing);
+            Children.Add(midScrim);
+            overlay.RenderTransform = outShift;
+            Children.Add(overlay);
             progress.Fill = Ui.Brush(Ui.ACCENT);
             progress.Height = 3;
             progress.VerticalAlignment = VerticalAlignment.Top;
@@ -469,19 +476,27 @@ namespace Broadsheet
             slideGen++;
             inShift.BeginAnimation(TranslateTransform.XProperty, null);
             outShift.BeginAnimation(TranslateTransform.XProperty, null);
+            underScrim.BeginAnimation(OpacityProperty, null);
+            midScrim.BeginAnimation(OpacityProperty, null);
             inShift.X = 0;
             outShift.X = 0;
-            outgoing.Visibility = Visibility.Collapsed;
-            outgoing.Source = null;
+            underlay.Visibility = Visibility.Collapsed;
+            underlay.Source = null;
+            overlay.Visibility = Visibility.Collapsed;
+            overlay.Source = null;
+            underScrim.Visibility = Visibility.Collapsed;
+            underScrim.Opacity = 0;
+            midScrim.Visibility = Visibility.Collapsed;
+            midScrim.Opacity = 0;
         }
 
-        /// <summary>Slides to the previous (-1) or next (+1) story like a card deck.</summary>
+        /// <summary>Slides to the previous (-1) or next (+1) story like a card stack.</summary>
         void Move(int delta)  // feature: reader.prev_next
         {
             ResetSlide();
             double w = scroll.ActualWidth > 0 ? scroll.ActualWidth : ActualWidth;
             double h = scroll.ActualHeight > 0 ? scroll.ActualHeight : ActualHeight;
-            RenderTargetBitmap snap = w > 0 && h > 0 ? CaptureScroll(w, h, delta) : null;
+            RenderTargetBitmap snap = w > 0 && h > 0 ? CaptureScroll(w, h, delta < 0) : null;
             if (!listener.OnMove(delta))
             {
                 BounceEdge(delta);
@@ -489,16 +504,42 @@ namespace Broadsheet
             }
             if (snap == null || w <= 0) return;
             int gen = slideGen;
-            outgoing.Width = w;
-            outgoing.Height = h;
-            outgoing.Source = snap;
-            outgoing.Visibility = Visibility.Visible;
-            outShift.X = 0;
-            inShift.X = delta * w;
             Duration d = new Duration(TimeSpan.FromMilliseconds(210));
             CubicEase ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            DoubleAnimation outAnim = new DoubleAnimation(0, -delta * w, d) { EasingFunction = ease };
-            DoubleAnimation inAnim = new DoubleAnimation(delta * w, 0, d) { EasingFunction = ease };
+            const double shift = 48;
+            DoubleAnimation outAnim, inAnim, scrimAnim;
+            if (delta > 0)
+            {
+                // Next story lands ON TOP from the right edge.
+                underlay.Width = w;
+                underlay.Height = h;
+                underlay.Source = snap;
+                underlay.Visibility = Visibility.Visible;
+                underScrim.Opacity = 0;
+                underScrim.Visibility = Visibility.Visible;
+                outShift.X = 0;
+                inShift.X = w;
+                outAnim = new DoubleAnimation(0, -shift, d) { EasingFunction = ease };
+                inAnim = new DoubleAnimation(w, 0, d) { EasingFunction = ease };
+                scrimAnim = new DoubleAnimation(0, 0.22, d) { EasingFunction = ease };
+                underScrim.BeginAnimation(OpacityProperty, scrimAnim);
+            }
+            else
+            {
+                // Current story moves OFF THE TOP to the right, uncovering previous underneath.
+                overlay.Width = w;
+                overlay.Height = h;
+                overlay.Source = snap;
+                overlay.Visibility = Visibility.Visible;
+                midScrim.Opacity = 0.22;
+                midScrim.Visibility = Visibility.Visible;
+                outShift.X = 0;
+                inShift.X = -shift;
+                outAnim = new DoubleAnimation(0, w, d) { EasingFunction = ease };
+                inAnim = new DoubleAnimation(-shift, 0, d) { EasingFunction = ease };
+                scrimAnim = new DoubleAnimation(0.22, 0, d) { EasingFunction = ease };
+                midScrim.BeginAnimation(OpacityProperty, scrimAnim);
+            }
             inAnim.Completed += (s, e) => { if (gen == slideGen) ResetSlide(); };
             outShift.BeginAnimation(TranslateTransform.XProperty, outAnim);
             inShift.BeginAnimation(TranslateTransform.XProperty, inAnim);
@@ -514,7 +555,7 @@ namespace Broadsheet
             inShift.BeginAnimation(TranslateTransform.XProperty, kf);
         }
 
-        RenderTargetBitmap CaptureScroll(double w, double h, int delta)
+        RenderTargetBitmap CaptureScroll(double w, double h, bool leftEdge)
         {
             try
             {
@@ -527,8 +568,7 @@ namespace Broadsheet
                 {
                     dc.DrawRectangle(Ui.Brush(Ui.PAPER), null, new Rect(0, 0, w, h));
                     dc.DrawRectangle(new VisualBrush(scroll), null, new Rect(0, 0, w, h));
-                    double ex = delta > 0 ? w - 1 : 0;
-                    dc.DrawRectangle(Ui.Brush(Ui.RULE), null, new Rect(ex, 0, 1, h));
+                    if (leftEdge) dc.DrawRectangle(Ui.Brush(Ui.RULE), null, new Rect(0, 0, 1, h));
                 }
                 rtb.Render(dv);
                 rtb.Freeze();

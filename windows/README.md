@@ -43,9 +43,9 @@ While developing, install once with `-Persistent`; after that, `build.cmd && pow
   browser: notched wheels glide, and precision touchpads track your fingers 1:1. In a story, the
   ← at the top left goes back, and the ☰ at the top right (or a right-click) slides out Options.
   The mouse's back button also works. **Two-finger swipes** on a precision touchpad work as in
-  Chrome: right to left goes back (what Backspace does), left to right draws Options in. The
-  page follows your fingers, so moving them back and forth rewinds and advances it; lift past
-  half way (or flick) to finish, or earlier to spring back.
+  Chrome: right to left goes back (what Backspace does; a story flies off to the right), left
+  to right draws Options in. The animation follows your fingers, so moving them back and forth
+  rewinds and advances it; lift past half way (or flick) to finish, or earlier to spring back.
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
   zone), read stories, continue reading, and refresh. Windows adds "Open in the browser". More stories like this › opens a pop-up

@@ -1527,7 +1527,6 @@ namespace Broadsheet
         int settleStart;
         Action settled;
         const int SETTLE_MS = 180;
-        int swipeReports, swipeWheels;
 
         [StructLayout(LayoutKind.Sequential)]
         struct RawInputDevice { public ushort UsagePage, Usage; public int Flags; public IntPtr Target; }
@@ -1558,7 +1557,6 @@ namespace Broadsheet
             if (msg == WM_INPUT)
             {
                 swipe.Touch(Environment.TickCount);
-                swipeReports++;
                 return IntPtr.Zero; // DefWindowProc frees the report
             }
             if (msg != WM_MOUSEHWHEEL && msg != WM_MOUSEWHEEL) return IntPtr.Zero;
@@ -1569,7 +1567,6 @@ namespace Broadsheet
             if (r == Swipe.STARTED) StartSwipe();
             if (swipe.Engaged)
             {
-                swipeWheels++;
                 ShowSwipe(swipe.Progress);
                 handled = true;
             }
@@ -1589,8 +1586,6 @@ namespace Broadsheet
             swipe.Limit(-1, canOptions ? 1 : 0);
             swipeOpened = false;
             swipeAt = 0;
-            swipeReports = 0;
-            swipeWheels = 0;
             if (!swipePolling)
             {
                 swipePolling = true;
@@ -1605,9 +1600,6 @@ namespace Broadsheet
             if (r == Swipe.NONE) return;
             swipePolling = false;
             CompositionTarget.Rendering -= PollSwipe;
-            Paths.Log("swipe: " + (r == Swipe.BACK ? "back" : r == Swipe.OPTIONS ? "options" : "cancel") + " over " + swipeOver
-                + " at " + swipeAt.ToString("0.00") + ", " + Math.Round(swipe.Velocity) + "/s, "
-                + swipeWheels + " scrolls, " + swipeReports + " touchpad reports");
             if (r == Swipe.BACK) SwipeBack();
             else if (r == Swipe.OPTIONS) Settle(1, null);
             else Settle(0, () => { if (swipeOpened) options.Close(); });
@@ -1621,7 +1613,7 @@ namespace Broadsheet
             switch (swipeOver)
             {
                 case SwipeOver.Player:
-                    Shift(player, -back * w);
+                    Shift(player, back * w);
                     break;
                 case SwipeOver.Popup:
                     options.PeekPopup(1 - back);
@@ -1637,9 +1629,9 @@ namespace Broadsheet
                         swipeOpened = true;
                     }
                     if (swipeOpened) options.Peek(Math.Max(0, p));
-                    // The story slides away with the fingers, uncovering the front page under it;
-                    // on the front page, Back only steps along the rail, so the page gives a little.
-                    if (swipeOver == SwipeOver.Reader) Shift(reader, -back * w);
+                    // The story flies off to the right, the way back goes, uncovering the front page
+                    // under it; on the front page, Back only steps along the rail, so the page gives a little.
+                    if (swipeOver == SwipeOver.Reader) Shift(reader, back * w);
                     else Shift(front, -back * 90);
                     break;
             }

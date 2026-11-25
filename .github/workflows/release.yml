@@ -170,6 +170,8 @@ jobs:
           v=${{ needs.version.outputs.name }}
           tag="v$v"
           if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$tag" "${{ needs.version.outputs.ref }}" -m "Broadsheet $v"
             git push -q origin "$tag"
           fi

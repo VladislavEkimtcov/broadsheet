@@ -45,7 +45,8 @@ screenshots: [android/README.md](android/README.md).
 ## Apple News on Android phones
 
 The same APK on a phone or tablet gets a touch UI in the same newspaper style: a strip of
-sections along the top, the section in one column (two in landscape), a serif reader you scroll
+sections along the top, **Dynamic** or **Big tile** layout across 1–3 columns (`>= 540 dp` two,
+`>= 860 dp` three), a serif reader you scroll
 with a finger and swipe sideways for the next story, videos full screen, and the options as a
 sheet from ☰ or a long press on a story, with a field for the relay's address. Pull down to
 refresh. Details and more screenshots: [android/README.md](android/README.md#on-a-phone).

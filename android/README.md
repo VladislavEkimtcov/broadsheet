@@ -19,7 +19,10 @@ Apple News for Android phones and tablets (Android 7.1 or later), in the same ne
 
 - **Front page:** a masthead with ☰, the sections as a strip along the top that scrolls
   sideways (the chosen one lit, with the red bar at its foot), and a gallery-style pager over
-  each section in one column (two in landscape or on a tablet): hero, briefs, picture cards.
+  each section across 1–3 columns (2 in landscape, 3 on wide tablets). Choose **Dynamic** in
+  Options (default on phones) for Apple News's mix of a hero, 2-up pairs, compact square-thumbnail
+  rows and text briefs when a story has no picture, or **Big tile** for hero, briefs and large
+  picture cards.
   Swipe left or right anywhere on the page to slide between categories, tap a story to read it,
   long-press it for its options. Deep sections load more as you scroll; pull down to refresh.
   The last front page shows at once when the app starts; if the Mac isn't answering, a note
@@ -29,8 +32,9 @@ Apple News for Android phones and tablets (Android 7.1 or later), in the same ne
   reopens where you left off; the text size goes from 14 to 40 pt (17 to start).
 - **Video:** tap it; it plays full screen. Tap to pause, tap the line to seek, Back to close.
 - **Options (☰):** a sheet from the bottom with everything the TV has (On the Mac, save, mark
-  as unread, like or dislike, more from, text size, appearance, read stories, continue reading,
-  refresh), plus Open in the browser and **Relay address**: leave it empty and the phone finds
+  as unread, like or dislike, more from, text size, appearance, read stories, front page layout,
+  continue reading, refresh), plus Open in the browser and **Relay address**: leave it empty and
+  the phone finds
   the relay by itself, or type the Mac's address (`192.168.1.20` means
   `http://192.168.1.20:8787`).
 - Light by day, dark after sunset, like the TV; the status bar and gesture bar follow.

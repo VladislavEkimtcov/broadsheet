@@ -37,16 +37,25 @@ namespace Broadsheet
         /// <summary>Resting on the rail this long counts as looking at the section.</summary>
         const int RAIL_REST_MS = 375;
 
-        const double RAIL = 224, GAP = 20, SIDE = 34, TOP = 26;
+        const double RAIL = FeedLayout.RAIL_WIDTH, GAP = 20, SIDE = 34, TOP = 26;
 
         readonly Images images;
         readonly IListener listener;
+        readonly RowDefinition topRow;
+        readonly ColumnDefinition railCol;
+        readonly DockPanel rail;
+        readonly Border topBar;
+        readonly Grid topMast;
+        readonly StackPanel topStrip = new StackPanel { Orientation = Orientation.Horizontal };
+        readonly ScrollViewer topScroll;
         readonly StackPanel railList = new StackPanel();
         readonly Scroller railScroll = new Scroller();
         readonly TextBlock updateNotice, status, message, dateLine;
+        readonly TextBlock topDate, topStatus, topUpdate;
         readonly Scroller page = new Scroller();
         readonly Canvas grid = new Canvas();
         readonly List<RailItem> railItems = new List<RailItem>();
+        readonly List<StripItem> topItems = new List<StripItem>();
         readonly List<Card> cards = new List<Card>();
         TextBlock title, sub;
         List<Section> sections = new List<Section>();
@@ -56,16 +65,19 @@ namespace Broadsheet
         Card cardFocus;
         readonly DispatcherTimer switchSection, railRest;
         int restAt = -1, railAt = -1;
+        bool collapsed, dynamicLayout;
 
         public Front(Images images, IListener listener)
         {
             this.images = images;
             this.listener = listener;
             Background = Ui.Brush(Ui.PAPER);
-            ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(RAIL) });
+            RowDefinitions.Add(topRow = new RowDefinition { Height = new GridLength(0) });
+            RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            ColumnDefinitions.Add(railCol = new ColumnDefinition { Width = new GridLength(RAIL) });
             ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-            DockPanel rail = new DockPanel { Background = Ui.Brush(Ui.RAIL), LastChildFill = true };
+            rail = new DockPanel { Background = Ui.Brush(Ui.RAIL), LastChildFill = true };
             rail.Margin = new Thickness(0);
             StackPanel head = new StackPanel { Margin = new Thickness(26, 30, 14, 0) };
             head.Children.Add(new TextBlock { Text = "Broadsheet", FontFamily = Ui.Display, FontSize = 31, Foreground = Ui.Brush(Ui.INK) });
@@ -93,13 +105,68 @@ namespace Broadsheet
             // Today can have twenty-odd sections: the rail scrolls with focus, its ends fading out.
             railScroll.OpacityMask = Fades();
             rail.Children.Add(railScroll);
+            SetRow(rail, 0);
+            SetRowSpan(rail, 2);
             SetColumn(rail, 0);
             Children.Add(rail);
+
+            // Collapsed header + horizontal section strip for narrow windows (< 840 DIPs).
+            StackPanel topStack = new StackPanel();
+            topMast = new Grid { Margin = new Thickness(20, 14, 68, 10) };
+            topMast.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            topMast.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            StackPanel mastLeft = new StackPanel { Orientation = Orientation.Horizontal };
+            mastLeft.Children.Add(new TextBlock { Text = "Broadsheet", FontFamily = Ui.Display, FontSize = 23, Foreground = Ui.Brush(Ui.INK), VerticalAlignment = VerticalAlignment.Center });
+            mastLeft.Children.Add(new Border { Width = 30, Height = 3, Background = Ui.Brush(Ui.ACCENT), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 2, 0, 0) });
+            topDate = Text(12, Ui.MUTED, Ui.SansMedium);
+            topDate.VerticalAlignment = VerticalAlignment.Center;
+            topDate.Margin = new Thickness(10, 2, 0, 0);
+            mastLeft.Children.Add(topDate);
+            SetColumn(mastLeft, 0);
+            topMast.Children.Add(mastLeft);
+            topStatus = Text(11, Ui.FAINT, Ui.Sans);
+            topStatus.HorizontalAlignment = HorizontalAlignment.Right;
+            topStatus.VerticalAlignment = VerticalAlignment.Center;
+            topStatus.TextTrimming = TextTrimming.CharacterEllipsis;
+            topStatus.Margin = new Thickness(14, 2, 0, 0);
+            topUpdate = Text(11, Ui.ACCENT, Ui.SansMedium);
+            topUpdate.HorizontalAlignment = HorizontalAlignment.Right;
+            topUpdate.VerticalAlignment = VerticalAlignment.Center;
+            topUpdate.TextTrimming = TextTrimming.CharacterEllipsis;
+            topUpdate.Margin = new Thickness(14, 2, 0, 0);
+            topUpdate.Visibility = Visibility.Collapsed;
+            SetColumn(topStatus, 1);
+            SetColumn(topUpdate, 1);
+            topMast.Children.Add(topStatus);
+            topMast.Children.Add(topUpdate);
+            topStack.Children.Add(topMast);
+            topScroll = new ScrollViewer
+            {
+                Content = topStrip,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled
+            };
+            topScroll.PreviewMouseWheel += (s, e) => { topScroll.ScrollToHorizontalOffset(topScroll.HorizontalOffset - e.Delta); e.Handled = true; };
+            topStack.Children.Add(topScroll);
+            topBar = new Border
+            {
+                Background = Ui.Brush(Ui.RAIL),
+                BorderBrush = Ui.Brush(Ui.RULE),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Child = topStack,
+                Visibility = Visibility.Collapsed
+            };
+            SetRow(topBar, 0);
+            SetColumn(topBar, 0);
+            SetColumnSpan(topBar, 2);
+            Children.Add(topBar);
 
             grid.Margin = new Thickness(0);
             page.Content = grid;
             page.Moved += Viewport;
             page.SizeChanged += (s, e) => Arrange_();
+            SizeChanged += (s, e) => UpdateChrome();
+            SetRow(page, 1);
             SetColumn(page, 1);
             Children.Add(page);
 
@@ -107,9 +174,10 @@ namespace Broadsheet
             message.TextAlignment = TextAlignment.Center;
             message.TextWrapping = TextWrapping.Wrap;
             message.LineHeight = 20 * 1.45;
-            message.Margin = new Thickness(60, 0, 60, 0);
+            message.Margin = new Thickness(40, 0, 40, 0);
             message.VerticalAlignment = VerticalAlignment.Center;
             message.Visibility = Visibility.Collapsed;
+            SetRow(message, 1);
             SetColumn(message, 1);
             Children.Add(message);
 
@@ -159,7 +227,9 @@ namespace Broadsheet
 
         public void UpdateDate()
         {
-            dateLine.Text = DateTime.Now.ToString("dddd, MMMM d", CultureInfo.CurrentCulture);
+            string d = DateTime.Now.ToString("dddd, MMMM d", CultureInfo.CurrentCulture);
+            dateLine.Text = d;
+            topDate.Text = d;
         }
 
         public bool HasContent { get { return sections.Count > 0; } }
@@ -167,7 +237,12 @@ namespace Broadsheet
         public string StatusText
         {
             get { return status.Text; }
-            set { if (status.Text != value) status.Text = value; } // nothing to redraw when it's the same
+            set
+            {
+                if (status.Text != value) status.Text = value; // nothing to redraw when it's the same
+                string flat = string.IsNullOrEmpty(value) ? "" : value.Replace('\n', ' ');
+                if (topStatus.Text != flat) topStatus.Text = flat;
+            }
         }
 
         public string UpdateNotice  // feature: opt.update
@@ -178,6 +253,10 @@ namespace Broadsheet
                 string next = value ?? "";
                 if (updateNotice.Text != next) updateNotice.Text = next;
                 updateNotice.Visibility = string.IsNullOrEmpty(next) ? Visibility.Collapsed : Visibility.Visible;
+                if (topUpdate.Text != next) topUpdate.Text = next;
+                bool hasUpd = !string.IsNullOrEmpty(next);
+                topUpdate.Visibility = hasUpd ? Visibility.Visible : Visibility.Collapsed;
+                if (topStatus != null) topStatus.Visibility = !hasUpd && (ActualWidth <= 0 || ActualWidth >= 620) ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
@@ -241,12 +320,17 @@ namespace Broadsheet
             page.Visibility = Visibility.Visible;
             railList.Children.Clear();
             railItems.Clear();
+            topStrip.Children.Clear();
+            topItems.Clear();
             int keep = 0;
             for (int i = 0; i < list.Count; i++)
             {
                 RailItem item = new RailItem(this, i, list[i].Title);
                 railItems.Add(item);
                 railList.Children.Add(item);
+                StripItem sItem = new StripItem(this, i, list[i].Title);
+                topItems.Add(sItem);
+                topStrip.Children.Add(sItem);
                 if (list[i].Id == currentId) keep = i;
             }
             current = -1;
@@ -287,6 +371,7 @@ namespace Broadsheet
             }
             current = index;
             foreach (RailItem r in railItems) r.SetSelected(r.Index == index);
+            foreach (StripItem sItem in topItems) sItem.SetSelected(sItem.Index == index);
             foreach (Card c in cards) images.Cancel(c);
             if (cardFocus != null) cardFocus = null;
             cards.Clear();
@@ -302,15 +387,99 @@ namespace Broadsheet
             grid.Children.Add(sub);
 
             List<Story> stories = s.Stories;
-            for (int i = 0; i < stories.Count; i++)
-            {
-                int style = stories.Count >= 3 && i == 0 ? Card.HERO : stories.Count >= 3 && i < 3 ? Card.BRIEF : Card.TILE;
-                AddCard(style, stories[i], i, now);
-            }
+            List<FeedLayout.Slot> slots = PlanStories(stories, CurrentCols());
+            foreach (FeedLayout.Slot sl in slots) AddCard(sl.Kind, stories[sl.Story], sl.Story, now);
             Arrange_();
             page.ScrollTo(0, false);
             Dispatcher.BeginInvoke(new Action(Viewport), DispatcherPriority.Loaded);
             if (focusFirst && cards.Count > 0) FocusCard(cards[0], true);
+        }
+
+        public void SetLayoutMode(string mode)  // feature: phone.layout
+        {
+            bool next = mode == "dynamic";
+            if (dynamicLayout == next) return;
+            dynamicLayout = next;
+            Arrange_();
+        }
+
+        void UpdateChrome()  // feature: win.responsive
+        {
+            double aw = ActualWidth > 0 ? ActualWidth : (page.ActualWidth > 0 ? page.ActualWidth + (collapsed ? 0 : RAIL) : 1280);
+            int winW = (int)Math.Round(aw);
+            int side = FeedLayout.SidePadding(winW);
+            topMast.Margin = new Thickness(side, 14, 68, 10);
+            topStrip.Margin = new Thickness(Math.Max(0, side - 12), 0, Math.Max(0, side - 12), 0);
+            topDate.Visibility = winW < 520 ? Visibility.Collapsed : Visibility.Visible;
+            bool hasUpd = !string.IsNullOrEmpty(topUpdate.Text);
+            topStatus.Visibility = !hasUpd && winW >= 620 ? Visibility.Visible : Visibility.Collapsed;
+            bool want = FeedLayout.RailCollapsed(winW);
+            if (want == collapsed) return;
+            collapsed = want;
+            railCol.Width = new GridLength(collapsed ? 0 : RAIL);
+            topRow.Height = collapsed ? GridLength.Auto : new GridLength(0);
+            rail.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+            topBar.Visibility = collapsed ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        int CurrentCols()
+        {
+            int winW, cols;
+            double side, gap, avail, contentW;
+            LayoutMetrics(out winW, out cols, out side, out gap, out avail, out contentW);
+            return cols;
+        }
+
+        void LayoutMetrics(out int winW, out int cols, out double side, out double gap, out double avail, out double contentW)
+        {
+            double aw = ActualWidth > 0 ? ActualWidth : (page.ActualWidth > 0 ? page.ActualWidth + (collapsed ? 0 : RAIL) : 1280);
+            winW = (int)Math.Round(aw);
+            bool wantCollapsed = FeedLayout.RailCollapsed(winW);
+            side = FeedLayout.SidePadding(winW);
+            gap = wantCollapsed && winW < 600 ? 14 : GAP;
+            avail = page.ActualWidth > 0 ? page.ActualWidth : Math.Max(300, aw - (wantCollapsed ? 0 : RAIL));
+            contentW = Math.Max(260, avail - side * 2);
+            cols = FeedLayout.Columns((int)Math.Round(contentW));
+        }
+
+        List<FeedLayout.Slot> PlanStories(List<Story> stories, int cols)
+        {
+            bool[] hasImg = new bool[stories.Count];
+            bool[] port = new bool[stories.Count];
+            for (int i = 0; i < stories.Count; i++)
+            {
+                Story st = stories[i];
+                hasImg[i] = st.Image != null;
+                port[i] = st.Image != null && st.ImageHeight > st.ImageWidth && st.ImageWidth > 0;
+            }
+            return FeedLayout.Plan(cols, dynamicLayout, hasImg, port);
+        }
+
+        static bool SlotsMatch(List<Card> list, List<FeedLayout.Slot> slots)
+        {
+            if (list.Count != slots.Count) return false;
+            for (int i = 0; i < slots.Count; i++)
+                if (list[i].Kind != slots[i].Kind || list[i].Index != slots[i].Story) return false;
+            return true;
+        }
+
+        void SyncCards(List<Story> stories, List<FeedLayout.Slot> slots)
+        {
+            int focusedIdx = cardFocus != null ? cardFocus.Index : -1;
+            foreach (Card c in cards)
+            {
+                images.Cancel(c);
+                grid.Children.Remove(c);
+            }
+            cards.Clear();
+            cardFocus = null;
+            long now = Dates.NowMs();
+            foreach (FeedLayout.Slot sl in slots) AddCard(sl.Kind, stories[sl.Story], sl.Story, now);
+            if (focusedIdx >= 0 && focusedIdx < cards.Count)
+            {
+                cardFocus = cards[focusedIdx];
+                cardFocus.SetFocused(true);
+            }
         }
 
         void AddCard(int style, Story story, int i, long now)
@@ -334,8 +503,20 @@ namespace Broadsheet
         public void Append(Section s)
         {
             if (current < 0 || current >= sections.Count || sections[current] != s || cards.Count >= s.Stories.Count) return;
-            long now = Dates.NowMs();
-            for (int i = cards.Count; i < s.Stories.Count; i++) AddCard(Card.TILE, s.Stories[i], i, now);
+            List<FeedLayout.Slot> slots = PlanStories(s.Stories, CurrentCols());
+            bool compatible = slots.Count >= cards.Count;
+            for (int i = 0; compatible && i < cards.Count; i++)
+                if (cards[i].Kind != slots[i].Kind || cards[i].Index != slots[i].Story) compatible = false;
+            if (compatible)
+            {
+                long now = Dates.NowMs();
+                for (int i = cards.Count; i < slots.Count; i++)
+                    AddCard(slots[i].Kind, s.Stories[slots[i].Story], slots[i].Story, now);
+            }
+            else
+            {
+                SyncCards(s.Stories, slots);
+            }
             if (sub != null) sub.Text = SubText(s);
             Arrange_();
         }
@@ -356,8 +537,11 @@ namespace Broadsheet
         {
             get
             {
-                double width = Math.Max(300, page.ActualWidth - SIDE * 2);
-                return (int)Math.Ceiling(Math.Floor((width - GAP * 2) / 3) * Ui.Scale * Ui.PixelsPerDip);
+                int winW, cols;
+                double side, gap, avail, contentW;
+                LayoutMetrics(out winW, out cols, out side, out gap, out avail, out contentW);
+                double w = cols == 1 ? contentW : Math.Floor((contentW - gap * (cols - 1)) / cols);
+                return (int)Math.Ceiling(w * Ui.Scale * Ui.PixelsPerDip);
             }
         }
 
@@ -366,43 +550,92 @@ namespace Broadsheet
         {
             get
             {
-                double width = Math.Max(300, page.ActualWidth - SIDE * 2);
-                double tile = Math.Floor((width - GAP * 2) / 3);
+                int winW, cols;
+                double side, gap, avail, contentW;
+                LayoutMetrics(out winW, out cols, out side, out gap, out avail, out contentW);
+                double colW = cols == 1 ? contentW : Math.Floor((contentW - gap * (cols - 1)) / cols);
+                double heroW = cols == 3 ? colW * 2 + gap : contentW;
+                double heroH = cols == 3 ? Math.Max(300, Math.Round(colW * 0.62))
+                    : cols == 2 ? Math.Max(260, Math.Min(420, Math.Round(contentW * 0.50)))
+                    : Math.Max(250, Math.Min(380, Math.Round(contentW * 0.72)));
                 double px = Ui.Scale * Ui.PixelsPerDip;
-                return new[] { (int)Math.Ceiling((tile * 2 + GAP) * px), (int)Math.Ceiling(Math.Max(300, Math.Round(tile * 0.62)) * px) };
+                return new[] { (int)Math.Ceiling(heroW * px), (int)Math.Ceiling(heroH * px) };
             }
         }
 
-        /// <summary>Places the cards for the page's width: a hero and two briefs, then rows of three.</summary>
+        /// <summary>Places the cards responsively in 3, 2, or 1 columns without shrinking below 1.0x.</summary>
         void Arrange_()
         {
-            if (title == null) return;
-            double width = Math.Max(300, page.ActualWidth - SIDE * 2);
-            double tile = Math.Floor((width - GAP * 2) / 3);
-            double tileH = Math.Round(tile * 9 / 16 + 96);
-            Canvas.SetLeft(title, SIDE);
-            Canvas.SetTop(title, TOP);
-            Canvas.SetLeft(sub, SIDE);
-            Canvas.SetTop(sub, TOP + 30 * 1.33 + 6);
-            double y = TOP + 30 * 1.33 + 6 + 12.5 * 1.33 + 18;
-            int i = 0;
-            if (cards.Count >= 3)
+            UpdateChrome();
+            if (title == null || current < 0 || current >= sections.Count) return;
+            int winW, cols;
+            double side, gap, avail, contentW;
+            LayoutMetrics(out winW, out cols, out side, out gap, out avail, out contentW);
+            List<Story> stories = sections[current].Stories;
+            List<FeedLayout.Slot> slots = PlanStories(stories, cols);
+            if (!SlotsMatch(cards, slots)) SyncCards(stories, slots);
+
+            double top = collapsed ? 16 : TOP;
+            double titleSize = collapsed ? 26 : 30;
+            title.FontSize = titleSize;
+            Canvas.SetLeft(title, side);
+            Canvas.SetTop(title, top);
+            Canvas.SetLeft(sub, side);
+            Canvas.SetTop(sub, top + titleSize * 1.33 + 6);
+            double y = top + titleSize * 1.33 + 6 + 12.5 * 1.33 + 16;
+
+            double colW = cols == 1 ? contentW : Math.Floor((contentW - gap * (cols - 1)) / cols);
+            double pairW = Math.Floor((contentW - gap) / 2);
+            double tileH = Math.Round(colW * 9 / 16 + 96);
+            double fullTileH = Math.Round(contentW * 9 / 16 + 96);
+            double pairTileH = Math.Round(pairW * 9 / 16 + 104);
+            double heroH = cols == 3 ? Math.Max(300, Math.Round(colW * 0.62))
+                : cols == 2 ? Math.Max(260, Math.Min(420, Math.Round(contentW * 0.50)))
+                : Math.Max(250, Math.Min(380, Math.Round(contentW * 0.72)));
+            double briefH = cols == 2 && !dynamicLayout ? 150 : 132;
+            double compactH = cols == 1 ? 122 : 132;
+
+            int curRow = -1;
+            double rowTop = y, rowBottom = y;
+            foreach (FeedLayout.Slot sl in slots)
             {
-                double heroH = Math.Max(300, Math.Round(tile * 0.62));
-                double briefH = (heroH - GAP) / 2;
-                Place(cards[0], SIDE, y, tile * 2 + GAP, heroH);
-                Place(cards[1], SIDE + tile * 2 + GAP * 2, y, tile, briefH);
-                Place(cards[2], SIDE + tile * 2 + GAP * 2, y + briefH + GAP, tile, briefH);
-                y += heroH + GAP;
-                i = 3;
+                if (sl.Story >= cards.Count) continue;
+                Card c = cards[sl.Story];
+                if (sl.Row != curRow)
+                {
+                    if (curRow >= 0) y = rowBottom + gap;
+                    curRow = sl.Row;
+                    rowTop = y;
+                    rowBottom = y;
+                }
+                if (sl.StackCount > 1)
+                {
+                    double sh = (heroH - gap) / 2;
+                    double sy = rowTop + (sl.StackIndex > 0 ? sh + gap : 0);
+                    Place(c, side + colW * 2 + gap * 2, sy, colW, sh);
+                    rowBottom = Math.Max(rowBottom, sy + sh);
+                }
+                else if (cols == 1)
+                {
+                    double sw = sl.Span >= sl.GridCols ? contentW : pairW;
+                    double sx = side + (sl.Col == 0 ? 0 : pairW + gap);
+                    double sh = sl.Span < sl.GridCols ? pairTileH
+                        : (sl.Kind == FeedLayout.HERO ? heroH : sl.Kind == FeedLayout.TILE ? fullTileH : sl.Kind == FeedLayout.COMPACT ? compactH : briefH);
+                    Place(c, sx, rowTop, sw, sh);
+                    rowBottom = Math.Max(rowBottom, rowTop + sh);
+                }
+                else
+                {
+                    double sw = sl.Span * colW + (sl.Span - 1) * gap;
+                    double sx = side + sl.Col * (colW + gap);
+                    double sh = sl.Kind == FeedLayout.HERO ? heroH : sl.Kind == FeedLayout.TILE ? tileH : (sl.Kind == FeedLayout.COMPACT ? compactH : briefH);
+                    Place(c, sx, rowTop, sw, sh);
+                    rowBottom = Math.Max(rowBottom, rowTop + sh);
+                }
             }
-            for (; i < cards.Count; i += 3)
-            {
-                for (int j = i; j < Math.Min(i + 3, cards.Count); j++) Place(cards[j], SIDE + (j - i) * (tile + GAP), y, tile, tileH);
-                y += tileH + GAP;
-            }
-            grid.Height = y - GAP + 40;
-            grid.Width = page.ActualWidth;
+            if (slots.Count > 0) y = rowBottom + gap;
+            grid.Height = Math.Max(200, y - gap + 40);
+            grid.Width = avail;
             Viewport();
         }
 
@@ -440,13 +673,15 @@ namespace Broadsheet
             int was = railFocus;
             railFocus = index;
             for (int i = 0; i < railItems.Count; i++) railItems[i].SetLit(i == index);
+            for (int i = 0; i < topItems.Count; i++) topItems[i].SetLit(i == index);
             if (index >= 0 && index != was)  // feature: front.warm
             {
                 listener.OnRailFocus(index, railAt < 0 ? 0 : Math.Sign(index - railAt));
                 railAt = index;
                 RestOn(index);
             }
-            if (index >= 0 && index < railItems.Count) Reveal(railScroll, railItems[index], 24);
+            if (index >= 0 && index < railItems.Count && !collapsed) Reveal(railScroll, railItems[index], 24);
+            if (index >= 0 && index < topItems.Count && collapsed) RevealTop(topItems[index]);
             if (switchLater && index != current && index != was)
             {
                 switchSection.Stop();
@@ -454,11 +689,21 @@ namespace Broadsheet
             }
         }
 
+        void RevealTop(StripItem item)
+        {
+            if (!item.IsLoaded || topScroll.ViewportWidth <= 0) return;
+            Point p = item.TranslatePoint(new Point(0, 0), topStrip);
+            double left = p.X - 16, right = p.X + item.ActualWidth + 16;
+            if (left < topScroll.HorizontalOffset) topScroll.ScrollToHorizontalOffset(Math.Max(0, left));
+            else if (right > topScroll.HorizontalOffset + topScroll.ViewportWidth) topScroll.ScrollToHorizontalOffset(right - topScroll.ViewportWidth);
+        }
+
         void FocusCard(Card c, bool scroll)
         {
             if (railFocus >= 0)
             {
                 foreach (RailItem ri in railItems) ri.SetLit(false);
+                foreach (StripItem si in topItems) si.SetLit(false);
                 railFocus = -1;
             }
             if (cardFocus != c)
@@ -517,10 +762,20 @@ namespace Broadsheet
                 switch (k)
                 {
                     case Key.Up:
-                        if (railFocus > 0) FocusRail(railFocus - 1, true);
+                        if (!collapsed && railFocus > 0) FocusRail(railFocus - 1, true);
                         return true;
                     case Key.Down:
-                        if (railFocus < railItems.Count - 1) FocusRail(railFocus + 1, true);
+                        if (collapsed)
+                        {
+                            switchSection.Stop();
+                            int ri = railFocus;
+                            if (ri != current) Show(ri, false);
+                            if (cards.Count > 0) FocusCard(cards[0], true);
+                        }
+                        else if (railFocus < railItems.Count - 1) FocusRail(railFocus + 1, true);
+                        return true;
+                    case Key.Left:
+                        if (collapsed && railFocus > 0) FocusRail(railFocus - 1, true);
                         return true;
                     case Key.Home:
                         FocusRail(0, true);
@@ -529,10 +784,16 @@ namespace Broadsheet
                         FocusRail(railItems.Count - 1, true);
                         return true;
                     case Key.Right:
+                        if (collapsed)
+                        {
+                            if (railFocus < railItems.Count - 1) FocusRail(railFocus + 1, true);
+                            return true;
+                        }
+                        goto case Key.Enter;
                     case Key.Enter:
                         switchSection.Stop();
-                        int ri = railFocus;
-                        if (ri != current) Show(ri, false);
+                        int cur = railFocus;
+                        if (cur != current) Show(cur, false);
                         if (cards.Count > 0) FocusCard(cards[0], true);
                         return true;
                 }
@@ -549,8 +810,12 @@ namespace Broadsheet
                 case Key.Down:
                     Card next = Nearest(cardFocus, k);
                     if (next != null) FocusCard(next, true);
-                    else if (k == Key.Left) FocusRail(current, false);
-                    else if (k == Key.Up) page.ScrollTo(0, true);
+                    else if (k == Key.Left && !collapsed) FocusRail(current, false);
+                    else if (k == Key.Up)
+                    {
+                        if (collapsed && Bounds(cardFocus).Y < 200) FocusRail(current, false);
+                        else page.ScrollTo(0, true);
+                    }
                     return true;
                 case Key.PageDown:
                 case Key.PageUp:
@@ -704,6 +969,54 @@ namespace Broadsheet
                 string t = Ui.Ellipsize(text, Ui.SansMedium, 16.5, w - 14 - 8);
                 FormattedText f = Ui.Format(t, Ui.SansMedium, 16.5, lit || selected ? Ui.INK : Ui.MUTED);
                 dc.DrawText(f, new Point(14, (h - f.Height) / 2));
+            }
+        }
+
+        /// <summary>A section pill along the top strip when the rail collapses on narrow windows.</summary>
+        sealed class StripItem : FrameworkElement
+        {
+            public readonly int Index;
+            readonly Front front;
+            readonly string text;
+            bool selected, lit, hover;
+
+            public StripItem(Front front, int index, string text)
+            {
+                this.front = front;
+                Index = index;
+                this.text = text;
+                Height = 36;
+                Cursor = Cursors.Hand;
+            }
+
+            public void SetSelected(bool v) { selected = v; InvalidateVisual(); }
+
+            public void SetLit(bool v) { lit = v; InvalidateVisual(); }
+
+            protected override Size MeasureOverride(Size available)
+            {
+                double w = Math.Ceiling(Ui.Measure(text, Ui.SansMedium, 14) + 24);
+                return new Size(w, 36);
+            }
+
+            protected override void OnMouseEnter(MouseEventArgs e) { hover = true; InvalidateVisual(); front.RestOn(Index); }
+
+            protected override void OnMouseLeave(MouseEventArgs e) { hover = false; InvalidateVisual(); }
+
+            protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)  // feature: win.mouse
+            {
+                front.RailClicked(Index);
+                e.Handled = true;
+            }
+
+            protected override void OnRender(DrawingContext dc)
+            {
+                double w = ActualWidth, h = ActualHeight;
+                if (lit) dc.DrawRectangle(Ui.Brush(Ui.SURFACE_HI), null, new Rect(0, 0, w, h));
+                else if (hover) dc.DrawRectangle(Ui.Brush(Ui.Alpha(Ui.SURFACE_HI, 0.55)), null, new Rect(0, 0, w, h));
+                if (selected) dc.DrawRectangle(Ui.Brush(Ui.ACCENT), null, new Rect(12, h - 3, Math.Max(0, w - 24), 3));
+                FormattedText f = Ui.Format(text, Ui.SansMedium, 14, lit || selected ? Ui.INK : Ui.MUTED);
+                dc.DrawText(f, new Point(12, (h - f.Height) / 2));
             }
         }
     }

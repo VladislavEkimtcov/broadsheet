@@ -14,5 +14,5 @@ if /i "%1"=="release" set PROP=/p:EnableAutoUpdate=true
 if /i not "%1"=="test" exit /b 0
 set WPF=%FW%\WPF
 "%FW%\csc.exe" /nologo /out:bin\Tests.exe /target:exe /r:"%WPF%\WindowsBase.dll" /r:"%WPF%\PresentationCore.dll" /r:"%FW%\System.Xaml.dll" ^
-  tests\Tests.cs src\Json.cs src\Dates.cs src\Sun.cs src\Model.cs src\Ui.cs src\Ladder.cs src\Sse.cs src\Swipe.cs src\Updates.cs || exit /b 1
+  tests\Tests.cs src\Json.cs src\Dates.cs src\Sun.cs src\Model.cs src\Ui.cs src\Ladder.cs src\Sse.cs src\Swipe.cs src\Updates.cs src\FeedLayout.cs || exit /b 1
 bin\Tests.exe

@@ -268,6 +268,7 @@ namespace Broadsheet
             };
             popup.MouseLeftButtonUp += (s, e) => e.Handled = true;
             Children.Add(popup);
+            SizeChanged += (s, e) => { if (ActualWidth > 0) popup.Width = Math.Min(560, Math.Max(320, ActualWidth - 32)); };
         }
 
         /// <summary>Opens the pop-up over the panel with these rows; Enter (or a click) on a row runs its OnOk.</summary>

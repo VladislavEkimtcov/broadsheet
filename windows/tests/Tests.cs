@@ -197,6 +197,34 @@ namespace Broadsheet
             }
         }
 
+        static bool[] Bools(JObj c, string key)
+        {
+            List<object> raw = c.Arr(key);
+            bool[] out_ = new bool[raw.Count];
+            for (int i = 0; i < raw.Count; i++) out_[i] = (bool)raw[i];
+            return out_;
+        }
+
+        static void LayoutCases(JObj l)
+        {
+            foreach (JObj c in Each(l, "rail"))
+            {
+                int w = N(c, "width");
+                Check(FeedLayout.RailCollapsed(w) == c.Bool("collapsed") && FeedLayout.SidePadding(w) == N(c, "pad"),
+                    "layout: rail, " + c.Str("name"));
+            }
+            foreach (JObj c in Each(l, "columns"))
+                Check(FeedLayout.Columns(N(c, "width")) == N(c, "expect"), "layout: cols, " + c.Str("name"));
+            foreach (JObj c in Each(l, "plans"))
+            {
+                List<FeedLayout.Slot> got = FeedLayout.Plan(N(c, "cols"), c.Bool("dynamic"), Bools(c, "has_image"), Bools(c, "portrait"));
+                List<object> want = c.Arr("expect");
+                bool ok = got.Count == want.Count;
+                for (int i = 0; ok && i < got.Count; i++) ok = got[i].ToString() == (string)want[i];
+                Check(ok, "layout: plan, " + c.Str("name"));
+            }
+        }
+
         static int Main()
         {
             // JSON
@@ -223,6 +251,7 @@ namespace Broadsheet
                 SseCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "sse.json"))));
                 SwipeCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "swipe.json"))));
                 UpdateCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "update.json"))));
+                LayoutCases(Json.ParseObject(File.ReadAllText(Path.Combine(cases, "layout.json"))));
             }
 
             // Stories as the relay sends them

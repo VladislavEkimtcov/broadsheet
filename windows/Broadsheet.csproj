@@ -58,6 +58,7 @@
     <Compile Include="src\Model.cs" />
     <Compile Include="src\Store.cs" />
     <Compile Include="src\Ladder.cs" />
+    <Compile Include="src\FeedLayout.cs" />
     <Compile Include="src\Sse.cs" />
     <Compile Include="src\Bodies.cs" />
     <Compile Include="src\Relay.cs" />

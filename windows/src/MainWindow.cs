@@ -37,6 +37,8 @@ namespace Broadsheet
         static readonly string[] THEME_NAMES = { "Automatic", "Dark", "Light" };
         static readonly string[] READ_MODES = { "show", "dim", "hide" };
         static readonly string[] READ_NAMES = { "Do nothing", "Dim after reading", "Hide after reading" };
+        static readonly string[] LAYOUTS = { "dynamic", "big" };
+        static readonly string[] LAYOUT_NAMES = { "Dynamic", "Big tile" };
 
         readonly Prefs prefs = new Prefs();
         readonly Relay relay;
@@ -62,7 +64,7 @@ namespace Broadsheet
 
         // the options panel's state
         Story target;
-        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, updateTile, webTile, relayTile;
+        Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, layoutTile, continueTile, refreshTile, updateTile, webTile, relayTile;
         string keptUnread;
         Story reading;
         /// <summary>More stories like this: {title, path, kind, id} per choice, for the story in Options.</summary>
@@ -112,8 +114,8 @@ namespace Broadsheet
             Title = "Broadsheet";
             Width = 1280;
             Height = 760;
-            MinWidth = 720;
-            MinHeight = 460;
+            MinWidth = 420;
+            MinHeight = 360;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             WindowState = prefs.Get("window", "max") == "max" ? WindowState.Maximized : WindowState.Normal;
             UseLayoutRounding = true;
@@ -274,12 +276,13 @@ namespace Broadsheet
             return t;
         }
 
-        void Rescale()
+        void Rescale()  // feature: win.responsive
         {
             double w = scaler.ActualWidth > 0 ? scaler.ActualWidth : ActualWidth;
             double h = scaler.ActualHeight > 0 ? scaler.ActualHeight : ActualHeight;
             if (w <= 0 || h <= 0) return;
-            double s = Math.Max(0.8, Math.Min(2.0, Math.Min(w / 1240, h / 700)));
+            // Never scale below 1.0x when shrunk; let responsive columns handle narrow windows.
+            double s = Math.Max(1.0, Math.Min(2.0, Math.Min(w / 1240, h / 700)));
             s = Math.Round(s * 20) / 20; // steps of 5%, so a drag doesn't re-lay out every pixel
             if (Math.Abs(s - Ui.Scale) < 0.001 && root.LayoutTransform is ScaleTransform) return;
             Ui.Scale = s;
@@ -292,6 +295,7 @@ namespace Broadsheet
             Background = Ui.Brush(Ui.PAPER);
             root.Background = Ui.Brush(Ui.PAPER);
             front = new Front(images, this);
+            front.SetLayoutMode(LayoutMode);
             reader = new Reader(images, this);
             reader.SetTextSizeStep(prefs.GetInt("text", Reader.STANDARD));
             reader.Visibility = Visibility.Collapsed;
@@ -1011,6 +1015,15 @@ namespace Broadsheet
 
         string ReadMode { get { return prefs.Get("read", "show"); } }
 
+        string LayoutMode  // feature: phone.layout
+        {
+            get
+            {
+                string m = prefs.Get("layout", "big");
+                return m == "dynamic" ? "dynamic" : "big";
+            }
+        }
+
         static int IndexOf(string[] list, string value)
         {
             for (int i = 0; i < list.Length; i++) if (list[i] == value) return i;
@@ -1102,6 +1115,12 @@ namespace Broadsheet
                 },
                 OnCycle = () => SetReadMode(READ_MODES[(IndexOf(READ_MODES, ReadMode) + 1) % READ_MODES.Length])
             };
+            layoutTile = new Options.Tile("▤", "Front page layout")  // feature: phone.layout
+            {
+                Segments = LAYOUT_NAMES,
+                Checked = new bool[2],
+                OnOk = () => SetLayoutMode(LAYOUTS[layoutTile.Segment])
+            };
             Story unfinished = ReaderShown ? null : library.Unfinished();
             continueTile = null;
             if (unfinished != null)
@@ -1148,6 +1167,7 @@ namespace Broadsheet
             tiles.Add(sizeTile);
             tiles.Add(themeTile);
             tiles.Add(readTile);
+            tiles.Add(layoutTile);
             if (continueTile != null) tiles.Add(continueTile);
             tiles.Add(refreshTile);
             tiles.Add(updateTile);
@@ -1221,6 +1241,14 @@ namespace Broadsheet
             FillOptions();
         }
 
+        void SetLayoutMode(string mode)
+        {
+            if (mode == LayoutMode) return;
+            prefs.Set("layout", mode);
+            front.SetLayoutMode(mode);
+            FillOptions();
+        }
+
         void FillOptions()
         {
             if (!options.IsOpen) return;
@@ -1271,6 +1299,16 @@ namespace Broadsheet
 
             readTile.Value = "";
             readTile.Hint = READ_NAMES[IndexOf(READ_MODES, ReadMode)] + "  ·  ◀ ▶";
+
+            if (layoutTile != null)
+            {
+                bool big = LayoutMode == "big";
+                layoutTile.Segment = big ? 1 : 0;
+                layoutTile.Checked[0] = !big;
+                layoutTile.Checked[1] = big;
+                layoutTile.Hint = big ? "Hero, briefs and large picture tiles"
+                    : "Smart mix of compact rows, picture tiles and briefs";
+            }
 
             if (continueTile != null)
             {

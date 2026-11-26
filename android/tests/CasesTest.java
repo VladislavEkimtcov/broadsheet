@@ -33,6 +33,7 @@ public final class CasesTest {
         ladder(load(dir + "/ladder.json"));
         sse(load(dir + "/sse.json"));
         update(load(dir + "/update.json"));
+        layout(load(dir + "/layout.json"));
         System.out.println(failures == 0 ? "all passed" : failures + " failed");
         if (failures > 0) System.exit(1);
     }
@@ -76,6 +77,35 @@ public final class CasesTest {
             boolean got = Updates.isNewer(str(c, "remote"), str(c, "local"));
             check(got == (Boolean) c.get("expect"), "update: newer, " + str(c, "name"));
         }
+    }
+
+    private static void layout(Map<String, Object> l) {
+        for (Map<String, Object> c : list(l, "rail")) {
+            int w = num(c, "width");
+            check(FeedLayout.railCollapsed(w) == (Boolean) c.get("collapsed")
+                    && FeedLayout.sidePadding(w) == num(c, "pad"), "layout: rail, " + str(c, "name"));
+        }
+        for (Map<String, Object> c : list(l, "columns")) {
+            check(FeedLayout.columns(num(c, "width")) == num(c, "expect"), "layout: cols, " + str(c, "name"));
+        }
+        for (Map<String, Object> c : list(l, "plans")) {
+            boolean[] img = bools(c, "has_image");
+            boolean[] port = bools(c, "portrait");
+            List<FeedLayout.Slot> got = FeedLayout.plan(num(c, "cols"), (Boolean) c.get("dynamic"), img, port);
+            @SuppressWarnings("unchecked")
+            List<Object> want = (List<Object>) c.get("expect");
+            boolean ok = got.size() == want.size();
+            for (int i = 0; ok && i < got.size(); i++) ok = got.get(i).toString().equals(want.get(i));
+            check(ok, "layout: plan, " + str(c, "name"));
+        }
+    }
+
+    private static boolean[] bools(Map<String, Object> c, String key) {
+        @SuppressWarnings("unchecked")
+        List<Object> raw = (List<Object>) c.get(key);
+        boolean[] out = new boolean[raw.size()];
+        for (int i = 0; i < raw.size(); i++) out[i] = (Boolean) raw.get(i);
+        return out;
     }
 
     private static int num(Map<String, Object> o, String key) {

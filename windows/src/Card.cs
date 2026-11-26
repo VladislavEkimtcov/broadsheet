@@ -15,10 +15,11 @@ namespace Broadsheet
     /// light under the words even so, each line gets a dark block (see CheckContrast).
     /// TILE: 16:9 picture on top, dateline and a three-line headline below.
     /// BRIEF: no picture: dateline, a four-line headline and the start of the summary.
+    /// COMPACT: dateline and headline beside a square 1:1 thumbnail on the right.
     /// </summary>
     sealed class Card : FrameworkElement, IImageTarget
     {
-        public const int HERO = 0, TILE = 1, BRIEF = 2;
+        public const int HERO = 0, TILE = 1, BRIEF = 2, COMPACT = 3;
         const double BLOCK_ALPHA = 0xD6 / 255.0;
 
         public static readonly DependencyProperty FadeProperty = DependencyProperty.Register("Fade", typeof(double), typeof(Card),
@@ -48,7 +49,7 @@ namespace Broadsheet
             RenderTransform = zoom;
             RenderTransformOrigin = new Point(0.5, 0.5);
             metaSize = style == HERO ? 13 : 11.5;
-            titleSize = style == HERO ? 27 : (style == BRIEF ? 17 : 16);
+            titleSize = style == HERO ? 27 : (style == BRIEF ? 17 : (style == COMPACT ? 15.5 : 16));
             excerptSize = style == HERO ? 15 : 13;
             titleLine = titleSize * 1.18;
             excerptLine = excerptSize * 1.36;
@@ -80,10 +81,24 @@ namespace Broadsheet
             }
         }
 
+        double CompactThumb(double w, double h)
+        {
+            double pad = 12;
+            return Math.Max(0, Math.Min(h - pad * 2, Math.Round(w * 0.28)));
+        }
+
         void LoadPicture()
         {
             if (!near || Story.Image == null || Kind == BRIEF || ActualWidth <= 0) return;
             double px = Ui.Scale * Ui.PixelsPerDip;
+            if (Kind == COMPACT)
+            {
+                double thumb = CompactThumb(ActualWidth, ActualHeight);
+                if (thumb <= 0) return;
+                int tw = (int)Math.Ceiling(thumb * px);
+                images.Load(this, Story.ImageFor(tw), tw, tw);
+                return;
+            }
             double h = Kind == HERO ? ActualHeight : ActualWidth * 9 / 16;
             int w = (int)Math.Ceiling(ActualWidth * px);
             images.Load(this, Story.ImageFor(w), w, (int)Math.Ceiling(h * px));
@@ -141,8 +156,8 @@ namespace Broadsheet
             if (w <= 0) return;
             laidOut = RenderSize;
             double pad = Kind == HERO ? 22 : 12;
-            double tw = w - pad * 2;
-            int titleLines = Kind == BRIEF ? 4 : 3;
+            double tw = Kind == COMPACT ? Math.Max(1, w - pad * 3 - CompactThumb(w, ActualHeight)) : w - pad * 2;
+            int titleLines = Kind == BRIEF ? 4 : (Kind == COMPACT ? (ActualHeight >= 150 ? 4 : 3) : (Kind == TILE && w < 220 ? 4 : 3));
             title = Ui.Wrap(Story.Title, Ui.HeadFace, titleSize, tw, titleLines);
             excerpt = new List<string>();
             if (Story.Excerpt != null && Kind == HERO)
@@ -274,6 +289,24 @@ namespace Broadsheet
                 DrawMeta(dc, pad, y, w - pad * 2, Story.Accent, false);
                 DrawLines(dc, title, Ui.HeadFace, titleSize, titleLine, Ui.INK, pad, y + metaSize * 1.2 + 7, false);
                 if (Story.Paid) DrawBadge(dc, 8, 8);
+            }
+            else if (Kind == COMPACT)
+            {
+                double pad = 12;
+                double thumb = CompactThumb(w, h);
+                double rx = w - pad - thumb;
+                DrawPicture(dc, new Rect(rx, pad, thumb, thumb));
+                double tw = Math.Max(1, rx - pad * 2);
+                DrawMeta(dc, pad, pad, tw, Story.Accent, false);
+                double titleTop = pad + metaSize * 1.2 + 7;
+                DrawLines(dc, title, Ui.HeadFace, titleSize, titleLine, Ui.INK, pad, titleTop, false);
+                if (Story.Paid)
+                {
+                    double bh = 18;
+                    double tBot = titleTop + title.Count * titleLine;
+                    if (tBot + 6 + bh <= h - pad) DrawBadge(dc, pad, h - pad - bh);
+                    else if (thumb >= 72) DrawBadge(dc, rx + 4, pad + 4);
+                }
             }
             else
             {

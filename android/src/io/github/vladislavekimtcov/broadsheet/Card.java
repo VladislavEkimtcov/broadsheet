@@ -26,10 +26,11 @@ import android.view.View;
  * block behind it: see {@link #checkContrast}.</li>
  * <li>{@link #TILE}: 16:9 picture on top, dateline and a three-line headline below.</li>
  * <li>{@link #BRIEF}: no picture: dateline, a four-line headline and the start of the summary.</li>
+ * <li>{@link #COMPACT}: dateline and headline beside a square 1:1 thumbnail on the right.</li>
  * </ul>
  */
 final class Card extends View implements Images.Target {
-    static final int HERO = 0, TILE = 1, BRIEF = 2;
+    static final int HERO = 0, TILE = 1, BRIEF = 2, COMPACT = 3;
 
     final int style;
     Story story;
@@ -63,7 +64,7 @@ final class Card extends View implements Images.Target {
         setId(View.generateViewId());
         metaPaint = Ui.paint(style == HERO ? 13 : 11.5f, Ui.MUTED, Ui.sansMedium);
         // The hero's words sit on a dark scrim over its picture, light or dark page alike.
-        titlePaint = Ui.paint(style == HERO ? 27 : (style == BRIEF ? 17 : 16), style == HERO ? 0xFFF4EFE6 : Ui.INK, Ui.head);
+        titlePaint = Ui.paint(style == HERO ? 27 : (style == BRIEF ? 17 : (style == COMPACT ? 15.5f : 16)), style == HERO ? 0xFFF4EFE6 : Ui.INK, Ui.head);
         excerptPaint = Ui.paint(style == HERO ? 15 : 13, style == HERO ? 0xFFC9C2B6 : Ui.MUTED, Ui.text);
         badgePaint = Ui.paint(10, Ui.INK, Ui.sansBold);
         border.setStyle(Paint.Style.STROKE);
@@ -102,11 +103,18 @@ final class Card extends View implements Images.Target {
         }
     }
 
+    private int compactThumb(int w, int h) {
+        int pad = Ui.dp(12);
+        return Math.max(0, Math.min(h - pad * 2, Math.round(w * 0.28f)));
+    }
+
     private int imageWidth() {
+        if (style == COMPACT) return Math.max(1, compactThumb(getWidth(), getHeight()));
         return Math.max(1, getWidth());
     }
 
     private int imageHeight() {
+        if (style == COMPACT) return Math.max(1, compactThumb(getWidth(), getHeight()));
         return style == HERO ? Math.max(1, getHeight()) : Math.max(1, getWidth() * 9 / 16);
     }
 
@@ -147,8 +155,11 @@ final class Card extends View implements Images.Target {
         int w = getWidth();
         if (story == null || w <= 0) return;
         int pad = Ui.dp(style == HERO ? 22 : 12);
-        int tw = w - pad * 2;
-        int titleLines = style == HERO ? 3 : (style == BRIEF ? 4 : 3);
+        int tw = style == COMPACT
+                ? Math.max(1, w - pad * 3 - compactThumb(w, getHeight()))
+                : w - pad * 2;
+        int titleLines = style == HERO ? 3 : (style == BRIEF ? 4
+                : (style == COMPACT ? (getHeight() >= Ui.dp(148) ? 4 : 3) : (w < Ui.dp(220) ? 4 : 3)));
         title = layout(story.title, titlePaint, tw, titleLines, 1.04f);
         excerpt = null;
         if (story.excerpt != null && style == HERO) {
@@ -298,6 +309,22 @@ final class Card extends View implements Images.Target {
             drawMeta(c, pad, y, w - pad * 2);
             drawLayout(c, title, pad, y + Ui.dp(9));
             if (story.paid) drawBadge(c, Ui.dp(8), Ui.dp(8));
+        } else if (style == COMPACT) {
+            int pad = Ui.dp(12);
+            int thumb = compactThumb(w, h);
+            int rx = w - pad - thumb;
+            drawPicture(c, rx, pad, rx + thumb, pad + thumb);
+            int tw = Math.max(1, rx - pad * 2);
+            float metaBottom = pad + metaPaint.getTextSize() * 0.85f;
+            drawMeta(c, pad, metaBottom, tw);
+            float titleTop = metaBottom + Ui.dp(7);
+            drawLayout(c, title, pad, titleTop);
+            if (story.paid) {
+                float bh = badgePaint.getTextSize() + Ui.px(8);
+                float tBot = title != null ? titleTop + title.getHeight() : titleTop;
+                if (tBot + Ui.dp(6) + bh <= h - pad) drawBadge(c, pad, h - pad - bh);
+                else if (thumb >= Ui.dp(72)) drawBadge(c, rx + Ui.dp(4), pad + Ui.dp(4));
+            }
         } else {
             fill.setColor(Ui.mix(Ui.SURFACE, tint(), 0.12f));
             c.drawRect(0, 0, w, h, fill);

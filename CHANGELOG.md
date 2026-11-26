@@ -7,6 +7,14 @@ their own numbers; they're noted where they shipped.
 
 ## Unreleased
 
+- **Windows front page:** shrinking the window no longer scales UI below 1.0× or crams three tiny
+  columns beside a fixed rail. Below 840 DIPs the left rail collapses into a compact top section
+  strip, and cards adapt cleanly from 3 columns to 2 (`< 860`) and 1 (`< 540`) while keeping the
+  3-column TV layout on wide monitors.
+- **Phone and Windows:** new **Front page layout** option in Options switching between **Dynamic**
+  (Apple News rhythm: hero, 2-up pairs, compact square-thumbnail rows, text briefs when a story
+  has no photo, portrait-aware sizing; default on mobile) and **Big tile** (hero, two briefs,
+  picture-top tiles; default on Windows), with 3-column support on wide tablets (`>= 860 dp`).
 - **Phone front page:** the category strip's highlight block and accent rule now stretch and flow
   between tabs in lockstep with the gallery swipe.
 - **Reader, all ports:** story-to-story transitions now feel like a stack of cards (swiping left /

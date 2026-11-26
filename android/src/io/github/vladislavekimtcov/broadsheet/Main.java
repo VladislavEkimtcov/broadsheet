@@ -61,6 +61,8 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     private static final String[] THEME_NAMES = {"Automatic", "Dark", "Light"};
     private static final String[] READ_MODES = {"show", "dim", "hide"};
     private static final String[] READ_NAMES = {"Do nothing", "Dim after reading", "Hide after reading"};
+    private static final String[] LAYOUTS = {"dynamic", "big"};
+    private static final String[] LAYOUT_NAMES = {"Dynamic", "Big tile"};
 
     private Relay relay;
     private Images images;
@@ -107,7 +109,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
 
     // the options panel's state
     private Story target;
-    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, continueTile, refreshTile, updateTile, relayTile;
+    private Options.Tile saveTile, reactTile, unreadTile, moreTile, sizeTile, themeTile, readTile, layoutTile, continueTile, refreshTile, updateTile, relayTile;
     /** The open story was marked unread: leaving it mustn't count it as read again. */
     private String keptUnread;
     /** The story on screen in the reader, or null while the front page shows. */
@@ -259,7 +261,13 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
     private void buildViews() {
         root.removeAllViews();
         root.setBackgroundColor(Ui.PAPER);
-        front = Ui.touch ? new Feed(this, images, this) : new Front(this, images, this);
+        if (Ui.touch) {
+            Feed f = new Feed(this, images, this);
+            f.setLayoutMode(layoutMode());
+            front = f;
+        } else {
+            front = new Front(this, images, this);
+        }
         reader = new Reader(this, images, this);
         reader.setTextSizeStep(textStep());
         reader.setVisibility(View.GONE);
@@ -944,6 +952,18 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         return m == null ? "show" : m;
     }
 
+    private String layoutMode() {  // feature: phone.layout
+        String m = prefs.getString("layout", "dynamic");
+        return "big".equals(m) ? "big" : "dynamic";
+    }
+
+    private void setLayoutMode(String mode) {
+        if (mode.equals(layoutMode())) return;
+        prefs.edit().putString("layout", mode).apply();
+        if (front instanceof Feed) ((Feed) front).setLayoutMode(mode);
+        fillOptions();
+    }
+
     private static int indexOf(String[] list, String value) {
         for (int i = 0; i < list.length; i++) if (list[i].equals(value)) return i;
         return 0;
@@ -1029,6 +1049,13 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
             front.refreshDim();
             fillOptions();
         };
+        layoutTile = null;
+        if (Ui.touch) {
+            layoutTile = new Options.Tile("▤", "Front page layout");  // feature: phone.layout
+            layoutTile.segments = LAYOUT_NAMES;
+            layoutTile.checked = new boolean[2];
+            layoutTile.onOk = () -> setLayoutMode(LAYOUTS[layoutTile.segment]);
+        }
         boolean reading = reader.getVisibility() == View.VISIBLE;
         final Story unfinished = reading ? null : library.unfinished();
         continueTile = null;
@@ -1071,6 +1098,7 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
         tiles.add(sizeTile);
         tiles.add(themeTile);
         tiles.add(readTile);
+        if (layoutTile != null) tiles.add(layoutTile);
         if (continueTile != null) tiles.add(continueTile);
         tiles.add(refreshTile);
         tiles.add(updateTile);
@@ -1170,6 +1198,14 @@ public final class Main extends Activity implements FrontView.Listener, Reader.L
 
         readTile.value = "";
         readTile.hint = READ_NAMES[indexOf(READ_MODES, readMode())] + (Ui.touch ? "" : "  ·  ◀ ▶");
+        if (layoutTile != null) {
+            boolean big = "big".equals(layoutMode());
+            layoutTile.segment = big ? 1 : 0;
+            layoutTile.checked[0] = !big;
+            layoutTile.checked[1] = big;
+            layoutTile.hint = big ? "Hero, briefs and large picture tiles"
+                    : "Smart mix of 2-up tiles, compact rows and briefs";
+        }
 
         if (continueTile != null) {
             Story u = library.unfinished();

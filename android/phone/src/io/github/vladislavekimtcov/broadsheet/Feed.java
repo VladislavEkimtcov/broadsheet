@@ -42,7 +42,7 @@ import java.util.Map;
 final class Feed extends FrameLayout implements FrontView, Main.Insettable {  // feature: phone.feed, front.rail
     /** A section chosen this long counts as looked at; a card on screen this long, as resting on it. */
     private static final int REST_MS = 375, CARD_REST_MS = 300;
-    private static final int GUTTER_DP = 16, GAP_DP = 12, MAX_DP = 760;
+    private static final int GUTTER_DP = 16, GAP_DP = 12;
 
     private final Images images;
     private final Listener listener;
@@ -51,6 +51,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     private final IconButton menu;
     private final View hair;
     private boolean wide;
+    private boolean dynamicLayout = true;
     private final HorizontalScrollView stripScroll;
     private final Strip strip;
     private final Pull pull;
@@ -196,12 +197,13 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
     }
 
     private int contentWidth() {
-        return Math.min(Ui.dp(MAX_DP), viewWidth() - Ui.dp(GUTTER_DP) * 2);
+        return Math.min(Ui.dp(FeedLayout.MAX_PHONE_CONTENT), Math.max(0, viewWidth() - Ui.dp(GUTTER_DP) * 2));
     }
 
-    /** One column on a phone held upright; two where there's room. */
+    /** One column upright, two on landscape phones or mid tablets, three on wide tablets. */
     private int columns() {
-        return contentWidth() >= Ui.dp(540) ? 2 : 1;
+        float density = Math.max(0.5f, getResources().getDisplayMetrics().density);
+        return FeedLayout.columns(Math.round(contentWidth() / density));
     }
 
     @Override
@@ -210,15 +212,28 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         return (contentWidth() - Ui.dp(GAP_DP) * (n - 1)) / n;
     }
 
+    private int heroWidth() {
+        int n = columns();
+        return n == 3 ? tileWidth() * 2 + Ui.dp(GAP_DP) : contentWidth();
+    }
+
     private int heroHeight() {
+        int n = columns();
         int screen = getHeight() > 0 ? getHeight() : getResources().getDisplayMetrics().heightPixels;
-        int want = Math.round(contentWidth() * (columns() == 1 ? 1.0f : 0.5f));
+        int want = n == 3 ? Math.round(heroWidth() * 0.56f) : Math.round(contentWidth() * (n == 1 ? 1.0f : 0.5f));
         return Math.max(Ui.dp(260), Math.min(want, Math.min(Ui.dp(460), Math.round(screen * 0.62f))));
     }
 
     @Override
     public int[] heroSize() {
-        return new int[] {contentWidth(), heroHeight()};
+        return new int[] {heroWidth(), heroHeight()};
+    }
+
+    void setLayoutMode(String mode) {  // feature: phone.layout
+        boolean next = !"big".equals(mode);
+        if (dynamicLayout == next) return;
+        dynamicLayout = next;
+        relayoutPage();
     }
 
     // ------------------------------------------------------------ FrontView
@@ -753,6 +768,9 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
         private int built;
         private LinearLayout lastRow;
         private int lastRowCount;
+        private int plannedRow = -1;
+        private LinearLayout heroSideCol;
+        private List<FeedLayout.Slot> planned;
         private TextView sub, status, more, banner, updateBanner;
 
         PageView(Context c) {
@@ -781,10 +799,17 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             built = 0;
             lastRow = null;
             lastRowCount = 0;
+            plannedRow = -1;
+            heroSideCol = null;
+            planned = null;
             sub = status = more = banner = updateBanner = null;
         }
 
         void bind(int index) {
+            bindAt(index, 0);
+        }
+
+        private void bindAt(int index, final int keepScrollY) {
             clear();
             if (index < 0 || index >= sections.size()) return;
             Relay.Section s = sections.get(index);
@@ -792,8 +817,7 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             Context c = getContext();
             long now = System.currentTimeMillis();
             lastWidth = viewWidth();
-            int cw = contentWidth(), n = columns(), gap = Ui.dp(GAP_DP), tile = tileWidth();
-            int tileH = tile * 9 / 16 + Ui.dp(96);
+            int cw = contentWidth(), gap = Ui.dp(GAP_DP);
 
             updateBanner = Ui.text(c, 14, Ui.INK, Ui.sansMedium);
             updateBanner.setLineSpacing(0, 1.25f);
@@ -818,29 +842,6 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             sub.setText(subText(s));
             page.addView(sub, block(cw, Ui.dp(5), Ui.dp(14)));
 
-            List<Story> stories = s.stories;
-            int i = 0;
-            lastRow = null;
-            lastRowCount = n;
-            if (stories.size() >= 3) {
-                page.addView(card(Card.HERO, stories.get(0), 0, now), block(cw, 0, 0, heroHeight()));
-                int briefH = Ui.dp(n == 1 ? 132 : 150);
-                if (n == 1) {
-                    page.addView(card(Card.BRIEF, stories.get(1), 1, now), block(cw, gap, 0, briefH));
-                    page.addView(card(Card.BRIEF, stories.get(2), 2, now), block(cw, gap, 0, briefH));
-                } else {
-                    LinearLayout row = row(c);
-                    row.addView(card(Card.BRIEF, stories.get(1), 1, now), new LinearLayout.LayoutParams(tile, briefH));
-                    LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(tile, briefH);
-                    second.leftMargin = gap;
-                    row.addView(card(Card.BRIEF, stories.get(2), 2, now), second);
-                    page.addView(row, block(cw, gap, 0));
-                }
-                i = 3;
-            }
-            for (; i < stories.size(); i++) addTile(stories.get(i), i, now, tile, tileH);
-            built = stories.size();
-
             more = Ui.text(c, 13, Ui.FAINT, Ui.sansMedium);
             more.setGravity(Gravity.CENTER_HORIZONTAL);
             page.addView(more, block(cw, Ui.dp(18), 0));
@@ -848,24 +849,94 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
             status.setLineSpacing(0, 1.25f);
             status.setText(statusText);
             page.addView(status, block(cw, Ui.dp(18), 0));
+
+            List<Story> stories = s.stories;
+            planned = planFor(stories);
+            for (FeedLayout.Slot sl : planned) {
+                addSlot(sl, stories.get(sl.story), now, gap);
+            }
+            built = stories.size();
+
             updateMore(s);
-            scrollTo(0, 0);
-            post(this::onViewport);
+            scrollTo(0, keepScrollY);
+            post(() -> {
+                if (keepScrollY > 0 && getScrollY() != keepScrollY) scrollTo(0, keepScrollY);
+                onViewport();
+            });
         }
 
-        private void addTile(Story st, int index, long now, int tile, int tileH) {
-            int n = columns(), gap = Ui.dp(GAP_DP);
-            if (lastRow == null || lastRowCount >= n) {
-                lastRow = row(getContext());
-                lastRowCount = 0;
-                int at = more != null ? page.indexOfChild(more) : -1;
-                if (at >= 0) page.addView(lastRow, at, block(contentWidth(), gap, 0));
-                else page.addView(lastRow, block(contentWidth(), gap, 0));
+        private List<FeedLayout.Slot> planFor(List<Story> stories) {
+            boolean[] hasImg = new boolean[stories.size()];
+            boolean[] port = new boolean[stories.size()];
+            for (int i = 0; i < stories.size(); i++) {
+                Story st = stories.get(i);
+                hasImg[i] = st.image != null;
+                port[i] = st.image != null && st.imageHeight > st.imageWidth && st.imageWidth > 0;
             }
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tile, tileH);
+            return FeedLayout.plan(columns(), dynamicLayout, hasImg, port);
+        }
+
+        private void addSlot(FeedLayout.Slot sl, Story st, long now, int gap) {
+            Context c = getContext();
+            int cw = contentWidth(), n = columns(), tile = tileWidth();
+            int heroH = heroHeight();
+            int briefH = Ui.dp(n == 1 ? 132 : (dynamicLayout ? 132 : 150));
+            int compactH = Ui.dp(n == 1 ? 116 : 132);
+            int fullTileH = cw * 9 / 16 + Ui.dp(96);
+            int tileH = tile * 9 / 16 + Ui.dp(96);
+            int pairW = (cw - gap) / 2;
+            int pairH = pairW * 9 / 16 + Ui.dp(108);
+
+            if (sl.stackCount > 1) {
+                if (heroSideCol == null) return;
+                int subH = (heroH - gap) / 2;
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(tile, subH);
+                if (sl.stackIndex > 0) lp.topMargin = gap;
+                heroSideCol.addView(card(sl.kind, st, sl.story, now), lp);
+                return;
+            }
+            if (sl.gridCols == 3 && sl.kind == FeedLayout.HERO && sl.span == 2) {
+                LinearLayout heroRow = row(c);
+                heroRow.addView(card(Card.HERO, st, sl.story, now), new LinearLayout.LayoutParams(tile * 2 + gap, heroH));
+                heroSideCol = new LinearLayout(c);
+                heroSideCol.setOrientation(LinearLayout.VERTICAL);
+                LinearLayout.LayoutParams sc = new LinearLayout.LayoutParams(tile, heroH);
+                sc.leftMargin = gap;
+                heroRow.addView(heroSideCol, sc);
+                insertBeforeMore(heroRow, block(cw, sl.row == 0 ? 0 : gap, 0, heroH));
+                lastRow = null;
+                plannedRow = sl.row;
+                return;
+            }
+            if (sl.span >= sl.gridCols) {
+                int h = sl.kind == FeedLayout.HERO ? heroH
+                        : sl.kind == FeedLayout.TILE ? fullTileH
+                        : sl.kind == FeedLayout.COMPACT ? compactH : briefH;
+                insertBeforeMore(card(sl.kind, st, sl.story, now), block(cw, sl.row == 0 ? 0 : gap, 0, h));
+                lastRow = null;
+                lastRowCount = 0;
+                plannedRow = sl.row;
+                return;
+            }
+            int cardW = (n == 1) ? pairW : tile;
+            int cardH = (n == 1) ? pairH
+                    : (sl.kind == FeedLayout.TILE ? tileH : (sl.kind == FeedLayout.BRIEF ? briefH : compactH));
+            if (lastRow == null || sl.row != plannedRow) {
+                lastRow = row(c);
+                lastRowCount = 0;
+                plannedRow = sl.row;
+                insertBeforeMore(lastRow, block(cw, sl.row == 0 ? 0 : gap, 0));
+            }
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(cardW, cardH);
             if (lastRowCount > 0) lp.leftMargin = gap;
-            lastRow.addView(card(Card.TILE, st, index, now), lp);
+            lastRow.addView(card(sl.kind, st, sl.story, now), lp);
             lastRowCount++;
+        }
+
+        private void insertBeforeMore(View v, LinearLayout.LayoutParams lp) {
+            int at = more != null ? page.indexOfChild(more) : -1;
+            if (at >= 0) page.addView(v, at, lp);
+            else page.addView(v, lp);
         }
 
         private Card card(int style, Story s, int index, long now) {
@@ -887,13 +958,34 @@ final class Feed extends FrameLayout implements FrontView, Main.Insettable {  //
 
         void append(Relay.Section s) {  // feature: front.deep
             if (section != s || built >= s.stories.size()) return;
+            List<FeedLayout.Slot> nextPlan = planFor(s.stories);
+            if (!samePrefix(planned, nextPlan, built)) {
+                int idx = sections.indexOf(s);
+                if (idx >= 0) bindAt(idx, getScrollY());
+                return;
+            }
             long now = System.currentTimeMillis();
-            int tile = tileWidth(), tileH = tile * 9 / 16 + Ui.dp(96);
-            for (int j = built; j < s.stories.size(); j++) addTile(s.stories.get(j), j, now, tile, tileH);
+            int gap = Ui.dp(GAP_DP);
+            for (FeedLayout.Slot sl : nextPlan) {
+                if (sl.story >= built) addSlot(sl, s.stories.get(sl.story), now, gap);
+            }
+            planned = nextPlan;
             built = s.stories.size();
             if (sub != null) sub.setText(subText(s));
             updateMore(s);
             post(this::onViewport);
+        }
+
+        private boolean samePrefix(List<FeedLayout.Slot> a, List<FeedLayout.Slot> b, int count) {
+            if (a == null || b == null || a.size() < count || b.size() < count) return false;
+            for (int i = 0; i < count; i++) {
+                FeedLayout.Slot x = a.get(i), y = b.get(i);
+                if (x.story != y.story || x.kind != y.kind || x.row != y.row
+                        || x.col != y.col || x.span != y.span || x.stackIndex != y.stackIndex) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         void refreshDim() {

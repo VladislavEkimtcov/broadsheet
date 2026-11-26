@@ -1,0 +1,122 @@
+{
+  "about": "Responsive grid tiers and card layout (FeedLayout.java and windows/src/FeedLayout.cs, features phone.layout and win.responsive). Rail collapses below 840; columns step 1 (< 540), 2 (540..859), 3 (>= 860). Each planned slot formats as '<story>:<H|T|B|C>@r<row>c<col>+<span/gridCols>[#stack/stackCount]'.",
+  "rail": [
+    { "name": "wide desktop keeps left rail", "width": 1280, "collapsed": false, "pad": 34 },
+    { "name": "at threshold 840 keeps rail", "width": 840, "collapsed": false, "pad": 34 },
+    { "name": "half-screen DOORWEDGE 683 collapses rail", "width": 683, "collapsed": true, "pad": 20 },
+    { "name": "very narrow window uses tight gutter", "width": 440, "collapsed": true, "pad": 16 }
+  ],
+  "columns": [
+    { "name": "upright phone 370dp", "width": 370, "expect": 1 },
+    { "name": "narrow 539", "width": 539, "expect": 1 },
+    { "name": "threshold 540 uses two columns", "width": 540, "expect": 2 },
+    { "name": "collapsed half-screen content 643 uses two columns", "width": 643, "expect": 2 },
+    { "name": "859 uses two columns", "width": 859, "expect": 2 },
+    { "name": "threshold 860 uses three columns", "width": 860, "expect": 3 },
+    { "name": "DOORWEDGE full content 1074 uses three columns", "width": 1074, "expect": 3 }
+  ],
+  "plans": [
+    {
+      "name": "3-col big keeps classic TV layout",
+      "cols": 3,
+      "dynamic": false,
+      "has_image": [true, true, true, true, true, true, true],
+      "portrait": [false, false, false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/3", "1:B@r0c2+1/3#0/2", "2:B@r0c2+1/3#1/2",
+        "3:T@r1c0+1/3", "4:T@r1c1+1/3", "5:T@r1c2+1/3",
+        "6:T@r2c0+1/3"
+      ]
+    },
+    {
+      "name": "2-col big keeps hero, two side-by-side briefs, then 2-up tiles",
+      "cols": 2,
+      "dynamic": false,
+      "has_image": [true, true, true, true, true],
+      "portrait": [false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/2", "1:B@r1c0+1/2", "2:B@r1c1+1/2",
+        "3:T@r2c0+1/2", "4:T@r2c1+1/2"
+      ]
+    },
+    {
+      "name": "1-col big puts hero, two briefs, then full-width big tiles",
+      "cols": 1,
+      "dynamic": false,
+      "has_image": [true, true, true, true, true],
+      "portrait": [false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/2", "1:B@r1c0+2/2", "2:B@r2c0+2/2",
+        "3:T@r3c0+2/2", "4:T@r4c0+2/2"
+      ]
+    },
+    {
+      "name": "1-col dynamic alternates 2-up pairs and 3 compact horizontal cards, brief when imageless",
+      "cols": 1,
+      "dynamic": true,
+      "has_image": [true, true, true, true, false, true, true, true, true, true, true, true],
+      "portrait": [false, false, false, false, false, false, false, false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/2",
+        "1:T@r1c0+1/2", "2:T@r1c1+1/2",
+        "3:C@r2c0+2/2", "4:B@r3c0+2/2", "5:C@r4c0+2/2",
+        "6:T@r5c0+1/2", "7:T@r5c1+1/2",
+        "8:C@r6c0+2/2", "9:C@r7c0+2/2", "10:C@r8c0+2/2",
+        "11:T@r9c0+2/2"
+      ]
+    },
+    {
+      "name": "1-col dynamic keeps portrait lead-break card compact instead of cropping to 16:9",
+      "cols": 1,
+      "dynamic": true,
+      "has_image": [true, true, true, true, true, true, true],
+      "portrait": [false, false, false, false, false, false, true],
+      "expect": [
+        "0:H@r0c0+2/2",
+        "1:T@r1c0+1/2", "2:T@r1c1+1/2",
+        "3:C@r2c0+2/2", "4:C@r3c0+2/2", "5:C@r4c0+2/2",
+        "6:C@r5c0+2/2"
+      ]
+    },
+    {
+      "name": "2-col dynamic sets compact/brief sub-leads then alternates 2-up tiles and 2 rows of compact",
+      "cols": 2,
+      "dynamic": true,
+      "has_image": [true, true, false, true, true, true, true, true, true, true],
+      "portrait": [false, false, false, false, false, false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/2",
+        "1:C@r1c0+1/2", "2:B@r1c1+1/2",
+        "3:T@r2c0+1/2", "4:T@r2c1+1/2",
+        "5:C@r3c0+1/2", "6:C@r3c1+1/2",
+        "7:C@r4c0+1/2", "8:C@r4c1+1/2",
+        "9:T@r5c0+1/2"
+      ]
+    },
+    {
+      "name": "3-col dynamic mixes compact side leads, 3-up tile rows, and 3-up compact rows",
+      "cols": 3,
+      "dynamic": true,
+      "has_image": [true, true, false, true, true, true, true, true, false, true, true, true, true, true, true],
+      "portrait": [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+      "expect": [
+        "0:H@r0c0+2/3", "1:C@r0c2+1/3#0/2", "2:B@r0c2+1/3#1/2",
+        "3:T@r1c0+1/3", "4:T@r1c1+1/3", "5:T@r1c2+1/3",
+        "6:C@r2c0+1/3", "7:C@r2c1+1/3", "8:B@r2c2+1/3",
+        "9:C@r3c0+1/3", "10:C@r3c1+1/3", "11:C@r3c2+1/3",
+        "12:T@r4c0+1/3", "13:T@r4c1+1/3", "14:T@r4c2+1/3"
+      ]
+    },
+    {
+      "name": "3-col dynamic demotes showcase row to compact when a photo is portrait",
+      "cols": 3,
+      "dynamic": true,
+      "has_image": [true, true, true, true, true, true],
+      "portrait": [false, false, false, false, true, false],
+      "expect": [
+        "0:H@r0c0+2/3", "1:C@r0c2+1/3#0/2", "2:C@r0c2+1/3#1/2",
+        "3:C@r1c0+1/3", "4:C@r1c1+1/3", "5:C@r1c2+1/3"
+      ]
+    }
+  ]
+}

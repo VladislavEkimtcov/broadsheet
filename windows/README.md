@@ -46,6 +46,11 @@ While developing, install once with `-Persistent`; after that, `build.cmd && pow
   Chrome: right to left goes back (what Backspace does; a story flies off to the right), left
   to right draws Options in. The animation follows your fingers, so moving them back and forth
   rewinds and advances it; lift past half way (or flick) to finish, or earlier to spring back.
+- **Front page & resizing:** starts at a minimum `1.0×` scale (never shrinking typography below
+  readable size when resized) and scales up smoothly on larger monitors and TVs. Wide windows keep
+  the 3-column TV rail and grid; shrinking below 840 DIPs collapses the rail into a compact top
+  section strip and steps cleanly down to 2 columns (`>= 540`) and 1 column (`< 540`). **Options**
+  also includes **Front page layout** (**Big tile** by default, or **Dynamic**).
 - **Options** are the TV's: save, like or dislike, mark as unread, more from the publisher or
   topic, text size, dark mode (light by day and dark after sunset, worked out from the time
   zone), read stories, continue reading, refresh, and **Updates** (release builds watch GitHub

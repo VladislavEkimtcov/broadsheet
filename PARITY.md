@@ -103,7 +103,8 @@ renumbered when the ports started sharing one version).
 
 | ID | Feature | TV | Phone | Windows | Notes |
 |---|---|---|---|---|---|
-| `phone.feed` | Front page in one column: masthead with ☰, hero, briefs, picture cards; two columns where the screen is wide | — | ✅ 0.4.0 | — | TV and Windows: the rail and grid (`front.rail`) |
+| `phone.feed` | Front page in 1–3 columns (`< 540 dp` 1 col, `>= 540 dp` 2 cols, `>= 860 dp` 3 cols): masthead with ☰, hero, pairs/tiles, compact rows, briefs | — | ✅ 0.4.0 | — | TV and Windows: the rail and grid (`front.rail`, `win.responsive`) |
+| `phone.layout` | Front page layout setting: Dynamic (Apple News rhythm: hero, 2-up pairs, 1:1 compact thumbnail rows, text briefs when imageless) vs Big tile (hero, briefs, picture tiles) | — | ✅ | ✅ | Cases: `spec/cases/layout.json`. TV keeps its 3-column grid. Phone defaults to Dynamic; Windows defaults to Big tile |
 | `phone.strip` | Sections as a strip along the top with a continuous highlight blob that tears and flows between tabs in lockstep with swiping sideways across categories | — | ✅ 0.4.0 | — | TV and Windows: the rail on the left |
 | `phone.pull_refresh` | Pull down at the top of the page to refresh (asks the Mac for a fresh Today, then reloads) | — | ✅ 0.4.0 | — | TV and Windows: Refresh now in Options; Windows also F5 |
 | `phone.swipe` | Swipe sideways in a story like a card stack: swipe left lands the next story on top, swipe right lifts the current card off the top | — | ✅ 0.4.0 | — | TV: Left/Right. Windows: Left/Right keys (`reader.prev_next`) |
@@ -124,3 +125,4 @@ renumbered when the ports started sharing one version).
 | `win.icon_buttons` | ← back in the reader, ☰ for Options | — | ✅ 0.4.0 | ✅ | The remote has Back and Menu keys. Phone: ← and ☰ in the reader's top bar, ☰ by the masthead |
 | `win.refresh_stepper` | Refresh now: ‹ how often › buttons on the tile (25 min / Hourly / Off), clickable, ◀ ▶ too; a click elsewhere refreshes | — | — | ✅ | The TV steps it with ◀ ▶. Phone: the sheet's ‹ › do this already (`phone.sheet`) |
 | `win.keys` | F5 refresh, F11 / Alt+Enter full screen | — | — | ✅ | No such keys on the remote. Phone: no such keys |
+| `win.responsive` | Shrunk-window adaptation: stays at 1.0× minimum scale (never shrinks UI below 1.0×), collapses the left rail into a compact top strip below 840 DIPs, and drops cleanly from 3 to 2 to 1 columns so cards stay readable | — | — | ✅ | Cases: `spec/cases/layout.json`. Phone adapts columns too (`phone.feed`); TV fills a fixed 16:9 screen |
